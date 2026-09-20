@@ -48,6 +48,7 @@ class ModelCallStatus(StrEnum):
 
 
 class RunEventType(StrEnum):
+    RUN_CREATED = "RUN_CREATED"
     RUN_STARTED = "RUN_STARTED"
     GENERATION_CREATED = "GENERATION_CREATED"
     AGENT_SPAWNED = "AGENT_SPAWNED"

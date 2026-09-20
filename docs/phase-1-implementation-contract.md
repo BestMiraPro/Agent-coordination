@@ -9,7 +9,7 @@ This document turns the Phase 1 architecture into concrete work packages for cod
 - [x] Work package C — PostgreSQL durable job queue
 - [x] Work package D — baseline orchestrator
 - [x] Work package E — structured parsing
-- [ ] Work package F — API
+- [x] Work package F — API
 - [ ] Work package G — minimal web control room
 - [ ] Work package H — baseline end-to-end integration test
 
