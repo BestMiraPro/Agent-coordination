@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from packages.core.domain.models import (
     AgentOrigin,
     AgentStatus,
+    CandidateLifecycle,
     CrossPollinationKind,
     KnowledgeKind,
     KnowledgeStatus,
@@ -40,6 +41,7 @@ class RunCreate(BaseModel):
     survivor_count: int = Field(default=2, ge=1, le=11)
     fresh_agent_count: int = Field(default=1, ge=0, le=11)
     redundancy_threshold: float = Field(default=0.78, ge=0.0, le=1.0)
+    critic_count: int = Field(default=1, ge=0, le=4)
 
     @model_validator(mode="after")
     def validate_tournament_shape(self) -> "RunCreate":
@@ -59,6 +61,7 @@ class RunCreatedResponse(BaseModel):
     survivor_count: int
     fresh_agent_count: int
     redundancy_threshold: float
+    critic_count: int
 
 
 class ClaimResponse(BaseModel):
@@ -114,6 +117,22 @@ class LineageResponse(BaseModel):
     mutation_type: MutationType
 
 
+class CandidateStateResponse(BaseModel):
+    id: UUID
+    submission_id: UUID
+    status: CandidateLifecycle
+
+
+class CriticFindingResponse(BaseModel):
+    id: UUID
+    critic_agent_id: UUID
+    submission_id: UUID
+    fatal_error: bool
+    confidence: float
+    critique: str
+    counterexample: str | None
+
+
 class CrossPollinationResponse(BaseModel):
     id: UUID
     target_agent_id: UUID
@@ -151,6 +170,8 @@ class GenerationResponse(BaseModel):
     lineages: list[LineageResponse]
     cross_pollination: list[CrossPollinationResponse]
     knowledge: list[KnowledgeResponse]
+    candidate_states: list[CandidateStateResponse]
+    critic_findings: list[CriticFindingResponse]
 
 
 class RunDetailResponse(BaseModel):
@@ -161,6 +182,7 @@ class RunDetailResponse(BaseModel):
     survivor_count: int
     fresh_agent_count: int
     redundancy_threshold: float
+    critic_count: int
     problem: ProblemResponse
     generations: list[GenerationResponse]
 

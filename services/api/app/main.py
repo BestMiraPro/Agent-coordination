@@ -23,7 +23,9 @@ from packages.persistence.jobs import DurableJobQueue
 from packages.persistence.repositories import SqlAlchemyUnitOfWork
 from services.api.app.schemas import (
     AgentResponse,
+    CandidateStateResponse,
     ClaimResponse,
+    CriticFindingResponse,
     CrossPollinationResponse,
     EvaluationResponse,
     GenerationResponse,
@@ -105,6 +107,7 @@ def create_app(
             survivor_count=body.survivor_count,
             fresh_agent_count=body.fresh_agent_count,
             redundancy_threshold=body.redundancy_threshold,
+            critic_count=body.critic_count,
         )
 
         with uow() as work:
@@ -127,6 +130,7 @@ def create_app(
                         "survivor_count": run.survivor_count,
                         "fresh_agent_count": run.fresh_agent_count,
                         "redundancy_threshold": run.redundancy_threshold,
+                        "critic_count": run.critic_count,
                     },
                 )
             )
@@ -147,6 +151,7 @@ def create_app(
             survivor_count=run.survivor_count,
             fresh_agent_count=run.fresh_agent_count,
             redundancy_threshold=run.redundancy_threshold,
+            critic_count=run.critic_count,
         )
 
     @app.get("/runs/{run_id}", response_model=RunDetailResponse)
@@ -175,6 +180,8 @@ def create_app(
                 lineages = work.lineages.list_for_generation(generation.id)
                 cross_pollination = work.cross_pollination.list_for_generation(generation.id)
                 knowledge = work.knowledge.list_for_generation(generation.id)
+                candidate_states = work.candidate_states.list_for_generation(generation.id)
+                critic_findings = work.critic_findings.list_for_generation(generation.id)
 
                 generations.append(
                     GenerationResponse(
@@ -277,6 +284,26 @@ def create_app(
                             )
                             for item in knowledge
                         ],
+                        candidate_states=[
+                            CandidateStateResponse(
+                                id=state.id,
+                                submission_id=state.submission_id,
+                                status=state.status,
+                            )
+                            for state in candidate_states
+                        ],
+                        critic_findings=[
+                            CriticFindingResponse(
+                                id=finding.id,
+                                critic_agent_id=finding.critic_agent_id,
+                                submission_id=finding.submission_id,
+                                fatal_error=finding.fatal_error,
+                                confidence=finding.confidence,
+                                critique=finding.critique,
+                                counterexample=finding.counterexample,
+                            )
+                            for finding in critic_findings
+                        ],
                     )
                 )
 
@@ -288,6 +315,7 @@ def create_app(
             survivor_count=run.survivor_count,
             fresh_agent_count=run.fresh_agent_count,
             redundancy_threshold=run.redundancy_threshold,
+            critic_count=run.critic_count,
             problem=ProblemResponse(
                 id=problem.id,
                 title=problem.title,
