@@ -17,5 +17,15 @@ class WorkerSettings(BaseSettings):
     inference_model: str = "openai/gpt-oss-20b"
     inference_base_url: str = "https://api.inference.wandb.ai/v1"
     inference_api_key: SecretStr | None = None
+    wandb_api_key: SecretStr | None = None
     inference_project: str | None = None
     inference_structured_outputs: bool = True
+    inference_discover_models: bool = True
+    inference_model_limit: int = Field(default=100, ge=1, le=500)
+
+    def resolved_api_key(self) -> SecretStr | None:
+        if self.inference_api_key is not None:
+            return self.inference_api_key
+        if self.inference_provider == "wandb":
+            return self.wandb_api_key
+        return None

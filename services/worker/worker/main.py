@@ -10,7 +10,10 @@ from packages.persistence.jobs import DurableJobQueue
 from packages.persistence.repositories import SqlAlchemyUnitOfWork
 from packages.providers.base import ModelProvider
 from packages.providers.fake import PhaseOneFakeProvider
-from packages.providers.openai_compatible import OpenAICompatibleProvider
+from packages.providers.openai_compatible import (
+    OpenAICompatibleProvider,
+    discover_openai_compatible_models,
+)
 from packages.providers.routed import AdaptiveProvider, ProviderRoute
 from services.worker.worker.handlers.baseline import BaselineJobHandler
 from services.worker.worker.handlers.engineering import (
@@ -21,36 +24,64 @@ from services.worker.worker.runtime import run_once, run_worker
 from services.worker.worker.settings import WorkerSettings
 
 
-def build_provider(settings: WorkerSettings) -> tuple[ModelProvider, str, str, dict[str, object]]:
+def build_provider(
+    settings: WorkerSettings,
+) -> tuple[ModelProvider, str, str, list[str], dict[str, object]]:
     if settings.inference_provider == "fake":
         return (
             PhaseOneFakeProvider(),
             "fake",
             "fake/phase-one",
+            ["fake/phase-one"],
             {"mode": "deterministic"},
         )
 
-    secret = settings.inference_api_key
+    secret = settings.resolved_api_key()
     if secret is None or not secret.get_secret_value():
         raise RuntimeError(
-            "INFERENCE_API_KEY is required when INFERENCE_PROVIDER is not fake"
+            "INFERENCE_API_KEY is required when INFERENCE_PROVIDER is not fake; "
+            "WANDB_API_KEY is also accepted when INFERENCE_PROVIDER=wandb"
         )
 
     provider_name = settings.inference_provider
-    return (
-        OpenAICompatibleProvider(
+    api_key = secret.get_secret_value()
+    provider = OpenAICompatibleProvider(
+        base_url=settings.inference_base_url,
+        api_key=api_key,
+        provider_name=provider_name,
+        project=settings.inference_project,
+        supports_json_schema=settings.inference_structured_outputs,
+    )
+
+    model_names = [settings.inference_model]
+    if provider_name == "wandb" and settings.inference_discover_models:
+        discovered = discover_openai_compatible_models(
             base_url=settings.inference_base_url,
-            api_key=secret.get_secret_value(),
-            provider_name=provider_name,
+            api_key=api_key,
             project=settings.inference_project,
-            supports_json_schema=settings.inference_structured_outputs,
-        ),
+        )
+        model_names = [
+            settings.inference_model,
+            *(
+                model
+                for model in discovered
+                if model != settings.inference_model
+            ),
+        ][: settings.inference_model_limit]
+
+    return (
+        provider,
         provider_name,
         settings.inference_model,
+        model_names,
         {
             "base_url": settings.inference_base_url,
             "project": settings.inference_project,
             "structured_outputs": settings.inference_structured_outputs,
+            "catalog_discovery": (
+                provider_name == "wandb" and settings.inference_discover_models
+            ),
+            "catalog_model_count": len(model_names),
         },
     )
 
@@ -65,48 +96,62 @@ def build_handler(
     def uow_factory() -> SqlAlchemyUnitOfWork:
         return SqlAlchemyUnitOfWork(session_factory)
 
-    provider, provider_name, model_name, metadata = build_provider(settings)
+    provider, provider_name, primary_model, model_names, metadata = build_provider(settings)
 
+    profiles: dict[str, tuple[ModelProfile, ModelState]] = {}
     with uow_factory() as uow:
-        profile = uow.model_profiles.find(provider_name, model_name)
-        if profile is None:
-            profile = uow.model_profiles.add(
-                ModelProfile(
-                    provider=provider_name,
-                    model=model_name,
-                    metadata=metadata,
+        for model_name in model_names:
+            profile = uow.model_profiles.find(provider_name, model_name)
+            if profile is None:
+                profile = uow.model_profiles.add(
+                    ModelProfile(
+                        provider=provider_name,
+                        model=model_name,
+                        metadata={
+                            **metadata,
+                            "catalog_primary": model_name == primary_model,
+                        },
+                    )
                 )
-            )
-        state = uow.model_states.get_for_profile(profile.id)
-        if state is None:
-            state = uow.model_states.add(
-                ModelState(
-                    model_profile_id=profile.id,
-                    quality_by_task={
-                        "default": 0.7,
-                        "research": 0.72,
-                        "judge": 0.7,
-                        "critic": 0.7,
-                    },
-                    marginal_cash_cost=0.0,
-                    credit_cost=0.0,
-                    latency_ms=1000.0,
-                    scarcity=0.0,
-                    failure_rate=0.0,
-                    rate_limit_pressure=0.0,
-                    available_concurrency=1,
+
+            state = uow.model_states.get_for_profile(profile.id)
+            if state is None:
+                primary = model_name == primary_model
+                state = uow.model_states.add(
+                    ModelState(
+                        model_profile_id=profile.id,
+                        quality_by_task={
+                            "default": 0.70 if primary else 0.50,
+                            "research": 0.72 if primary else 0.50,
+                            "judge": 0.70 if primary else 0.50,
+                            "critic": 0.70 if primary else 0.50,
+                            "engineering_plan": 0.70 if primary else 0.50,
+                            "engineering_implement": 0.70 if primary else 0.50,
+                            "engineering_review": 0.70 if primary else 0.50,
+                            "engineering_repair": 0.70 if primary else 0.50,
+                        },
+                        marginal_cash_cost=0.0,
+                        credit_cost=0.0,
+                        latency_ms=1000.0,
+                        scarcity=0.0,
+                        failure_rate=0.0,
+                        rate_limit_pressure=0.0,
+                        available_concurrency=1,
+                    )
                 )
-            )
+            profiles[model_name] = (profile, state)
         uow.commit()
 
-    provider = AdaptiveProvider(
+    primary_profile, _ = profiles[primary_model]
+    routed_provider = AdaptiveProvider(
         [
             ProviderRoute(
                 model_profile_id=profile.id,
-                model_name=profile.model,
+                model_name=model_name,
                 provider=provider,
                 state=state,
             )
+            for model_name, (profile, state) in profiles.items()
         ]
     )
 
@@ -115,17 +160,17 @@ def build_handler(
     research_handler = BaselineJobHandler(
         uow_factory=uow_factory,
         orchestrator=orchestrator,
-        provider=provider,
-        model_profile_id=profile.id,
-        model_profile_name=profile.model,
+        provider=routed_provider,
+        model_profile_id=primary_profile.id,
+        model_profile_name=primary_profile.model,
     )
     engineering_orchestrator = EngineeringOrchestrator(uow_factory, queue)
     engineering_handler = EngineeringJobHandler(
         uow_factory=uow_factory,
         orchestrator=engineering_orchestrator,
-        provider=provider,
-        model_profile_id=profile.id,
-        model_profile_name=profile.model,
+        provider=routed_provider,
+        model_profile_id=primary_profile.id,
+        model_profile_name=primary_profile.model,
     )
     handler = CompositeJobHandler(research_handler, engineering_handler)
     return queue, handler, settings

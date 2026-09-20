@@ -90,13 +90,18 @@ Create `.env` from `.env.example` and set:
 
 ```bash
 INFERENCE_PROVIDER=wandb
-INFERENCE_API_KEY=<your W&B API key>
+WANDB_API_KEY=<your W&B API key>
 INFERENCE_MODEL=openai/gpt-oss-20b
 INFERENCE_BASE_URL=https://api.inference.wandb.ai/v1
 INFERENCE_PROJECT=<optional team/project>
+INFERENCE_DISCOVER_MODELS=true
 ```
 
-No API key is persisted in model profiles, model calls, or run state.
+No API key is persisted in model profiles, model calls, or run state. With
+W&B catalog discovery enabled, worker startup authenticates against the
+documented `GET /models` endpoint and registers the currently available model
+IDs with neutral routing priors. `INFERENCE_API_KEY` remains supported as the
+vendor-neutral override.
 
 The adaptive router has durable model-state support for task quality, marginal
 cash cost, credit consumption, latency, scarcity, failures, rate-limit pressure,

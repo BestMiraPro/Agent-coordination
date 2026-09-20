@@ -12,6 +12,75 @@ class ProviderRequestError(RuntimeError):
     pass
 
 
+def discover_openai_compatible_models(
+    *,
+    base_url: str,
+    api_key: str,
+    project: str | None = None,
+    timeout_seconds: float = 20.0,
+    client: httpx.Client | None = None,
+) -> list[str]:
+    """Return model IDs from an OpenAI-compatible GET /models endpoint.
+
+    W&B Inference documents this endpoint and uses the same bearer token as
+    chat-completions. The API key is only sent in the Authorization header and
+    is never included in exceptions or returned metadata.
+    """
+
+    if not api_key:
+        raise ValueError("api_key is required")
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    if project:
+        headers["OpenAI-Project"] = project
+
+    owns_client = client is None
+    http = client or httpx.Client()
+    try:
+        try:
+            response = http.get(
+                f"{base_url.rstrip('/')}/models",
+                headers=headers,
+                timeout=timeout_seconds,
+            )
+        except httpx.HTTPError as exc:
+            raise ProviderRequestError(
+                f"model discovery request failed: {type(exc).__name__}"
+            ) from exc
+
+        if response.is_error:
+            raise ProviderRequestError(
+                f"model discovery returned HTTP {response.status_code}"
+            )
+
+        try:
+            data = response.json()
+            raw_models = data["data"]
+        except (ValueError, KeyError, TypeError) as exc:
+            raise ProviderRequestError(
+                "model discovery returned an invalid response"
+            ) from exc
+
+        if not isinstance(raw_models, list):
+            raise ProviderRequestError("model discovery returned invalid model data")
+
+        model_ids = []
+        for item in raw_models:
+            if isinstance(item, dict) and isinstance(item.get("id"), str):
+                model_ids.append(item["id"])
+
+        if not model_ids:
+            raise ProviderRequestError("model discovery returned no model IDs")
+
+        return sorted(set(model_ids))
+    finally:
+        if owns_client:
+            http.close()
+
+
 class OpenAICompatibleProvider:
     """Provider for OpenAI-compatible chat-completions endpoints.
 
@@ -66,17 +135,29 @@ class OpenAICompatibleProvider:
             headers["OpenAI-Project"] = self.project
 
         started = perf_counter()
-        try:
-            response = await self._client.post(
-                f"{self.base_url}/chat/completions",
-                json=payload,
+        response = await self._post(
+            payload=payload,
+            headers=headers,
+            timeout_seconds=request.timeout_seconds,
+        )
+        structured_output_fallback = False
+
+        # Some OpenAI-compatible models expose chat completions but not strict
+        # JSON-schema response_format. Keep them usable by retrying without that
+        # optional feature while preserving the JSON-only instruction in prompts.
+        if (
+            response.status_code in {400, 422}
+            and "response_format" in payload
+            and request.response_schema is not None
+        ):
+            fallback_payload = dict(payload)
+            fallback_payload.pop("response_format", None)
+            response = await self._post(
+                payload=fallback_payload,
                 headers=headers,
-                timeout=request.timeout_seconds,
+                timeout_seconds=request.timeout_seconds,
             )
-        except httpx.HTTPError as exc:
-            raise ProviderRequestError(
-                f"{self.provider_name} request failed: {type(exc).__name__}"
-            ) from exc
+            structured_output_fallback = True
 
         latency_ms = round((perf_counter() - started) * 1000)
 
@@ -115,8 +196,28 @@ class OpenAICompatibleProvider:
                 "finish_reason": choice.get("finish_reason"),
                 "usage": usage,
                 "response_model": model,
+                "structured_output_fallback": structured_output_fallback,
             },
         )
+
+    async def _post(
+        self,
+        *,
+        payload: dict[str, Any],
+        headers: dict[str, str],
+        timeout_seconds: float,
+    ) -> httpx.Response:
+        try:
+            return await self._client.post(
+                f"{self.base_url}/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=timeout_seconds,
+            )
+        except httpx.HTTPError as exc:
+            raise ProviderRequestError(
+                f"{self.provider_name} request failed: {type(exc).__name__}"
+            ) from exc
 
     async def aclose(self) -> None:
         if self._owns_client:
