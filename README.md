@@ -1,26 +1,28 @@
 # Agent Coordination
 
-A research-oriented multi-agent coordination system designed to maximize verified research progress per unit of time and compute budget.
+A research-oriented multi-agent coordination system designed to maximize
+verified research progress per unit of time and constrained compute budget.
 
-The current implementation includes the complete Phase 1 vertical slice and
-Phase 2 autonomous tournament mechanics:
+The repository now implements Phases 1–3:
 
 ```text
 problem
- -> Generation 0 independent researchers
+ -> explicit research niches
+ -> independent research population
  -> blind multidimensional judging
- -> vector-aware selection
- -> elimination
- -> clone surviving ideas
- -> mutate children
- -> persist lineage
+ -> quality + novelty + redundancy analysis
+ -> elite / novelty / wildcard survival
+ -> eliminate low-value or redundant branches
+ -> clone surviving ideas with mutation
+ -> inject fresh blind explorers
+ -> persist lineage and diversity decisions
  -> next generation
  -> ... until configured generation limit
 ```
 
 The orchestration state machine, durable PostgreSQL queue, API, worker,
-provider boundary, evolutionary policy, lineage persistence, and web control
-room are implemented.
+provider boundary, evolutionary policy, diversity policy, lineage persistence,
+and live web control room are implemented.
 
 ## Run the complete local stack
 
@@ -28,27 +30,36 @@ room are implemented.
 docker compose up --build
 ```
 
-Then open the research tournament control room at `http://localhost:3000`.
+Open the control room at `http://localhost:3000`.
 The API is exposed at `http://localhost:8000`.
 
 The default worker uses a deterministic fake provider, so a complete
-multi-generation tournament can run without credentials.
+multi-generation diversity-preserving tournament runs without credentials.
 
 ## Tournament defaults
 
-Runs created from the API/control room default to:
+Runs created through the API/control room default to:
 
 ```text
-generations: 3
-population:  4
-survivors:   2
-judges:      2 per generation
+generations:          3
+population:           4
+survivors:            2
+fresh explorers:      1 per later generation
+redundancy threshold: 0.78
+judges:               2 per generation
 ```
 
-Selection is based on the full evaluation vector rather than a single scalar.
-Survivors are cloned with `STRENGTHEN`, `FALSIFY`, `REDERIVE`, and
-`GENERALIZE` mutation objectives. Selection decisions and parent-child
-lineage are durable and inspectable.
+With three or more survivor slots the selection policy explicitly reserves
+elite, novelty, and wildcard survival. With two slots it preserves an elite and
+a novelty branch.
+
+Research agents rotate through explicit constructive, skeptical,
+counterexample, computational, special-case, generalization,
+alternative-formulation, and lemma-decomposition niches.
+
+Novelty and redundancy are currently measured with deterministic lexical
+Jaccard similarity over structured submission content. This costs no additional
+model calls and provides a benchmarkable baseline before considering embeddings.
 
 ## Use W&B Inference
 
@@ -62,9 +73,9 @@ INFERENCE_BASE_URL=https://api.inference.wandb.ai/v1
 INFERENCE_PROJECT=<optional team/project>
 ```
 
-The model can be replaced with another model available to your W&B account
-without changing tournament code. No API key is persisted in the database or
-repository.
+The model can be replaced with another model available to the configured
+OpenAI-compatible endpoint without changing tournament orchestration. API keys
+are not persisted in the database or repository.
 
 ## Development without Docker
 
@@ -97,19 +108,22 @@ ruff check .
 cd apps/web && npm run build
 ```
 
-CI runs PostgreSQL migrations, backend/unit/integration tests, provider
-contracts, Docker Compose validation, and a production Next.js build.
+CI validates Docker Compose, applies all PostgreSQL migrations, runs backend
+unit/integration/provider/eval tests, and builds the production Next.js app.
 
 ## Architectural principles
 
-- LLMs do research; code owns orchestration state.
-- Agents are disposable; useful research artifacts are durable.
+- LLMs do research; deterministic code owns orchestration state.
+- Agents are disposable; useful research artifacts should become durable.
 - Provider-specific logic never leaks into the core domain.
 - Every model call is attributable, measurable, and retry-safe.
-- Judges do not see model identity or lineage.
-- Selection does not rely on one scalar fitness score.
-- Convergence is not correctness; verification matters more than consensus.
+- Judges do not see model identity, niche, origin, or lineage metadata.
+- Selection never relies on one scalar fitness score.
+- Diversity is protected without treating novelty as correctness.
+- Fresh blind exploration remains available after convergence pressure begins.
+- Convergence is not correctness; verification outranks consensus.
 - Infrastructure is added only when measurements justify it.
 
 See `docs/architecture.md`, `docs/master-plan.md`,
-`docs/phase-1-implementation-contract.md`, and `docs/phase-2.md`.
+`docs/phase-1-implementation-contract.md`, `docs/phase-2.md`, and
+`docs/phase-3.md`.
