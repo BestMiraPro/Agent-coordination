@@ -85,11 +85,22 @@ class CrossPollinationKind(StrEnum):
     TRY = "TRY"
 
 
+class CandidateLifecycle(StrEnum):
+    PROPOSED = "PROPOSED"
+    PROMISING = "PROMISING"
+    LEADING = "LEADING"
+    UNDER_ATTACK = "UNDER_ATTACK"
+    VERIFICATION = "VERIFICATION"
+    VERIFIED = "VERIFIED"
+    REFUTED = "REFUTED"
+
+
 class JobType(StrEnum):
     CREATE_GENERATION = "create_generation"
     RUN_RESEARCH_AGENT = "run_research_agent"
     START_JUDGING = "start_judging"
     RUN_JUDGE = "run_judge"
+    RUN_CRITIC = "run_critic"
     FINALIZE_RUN = "finalize_run"
 
 
@@ -129,6 +140,9 @@ class RunEventType(StrEnum):
     KNOWLEDGE_CREATED = "KNOWLEDGE_CREATED"
     KNOWLEDGE_COMPACTED = "KNOWLEDGE_COMPACTED"
     CROSS_POLLINATION_CREATED = "CROSS_POLLINATION_CREATED"
+    CRITIC_STARTED = "CRITIC_STARTED"
+    CRITIC_COMPLETED = "CRITIC_COMPLETED"
+    CANDIDATE_STATUS_CHANGED = "CANDIDATE_STATUS_CHANGED"
     GENERATION_ADVANCED = "GENERATION_ADVANCED"
     RUN_COMPLETED = "RUN_COMPLETED"
     RUN_FAILED = "RUN_FAILED"
@@ -150,6 +164,7 @@ class Run:
     survivor_count: int = 2
     fresh_agent_count: int = 0
     redundancy_threshold: float = 0.78
+    critic_count: int = 0
     id: UUID = field(default_factory=uuid4)
 
 
@@ -250,6 +265,26 @@ class CrossPollinationPacket:
     source_submission_id: UUID
     kind: CrossPollinationKind
     payload: dict[str, Any] = field(default_factory=dict)
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass(slots=True)
+class CandidateState:
+    generation_id: UUID
+    submission_id: UUID
+    status: CandidateLifecycle = CandidateLifecycle.PROPOSED
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass(slots=True)
+class CriticFinding:
+    generation_id: UUID
+    critic_agent_id: UUID
+    submission_id: UUID
+    fatal_error: bool
+    confidence: float
+    critique: str
+    counterexample: str | None = None
     id: UUID = field(default_factory=uuid4)
 
 

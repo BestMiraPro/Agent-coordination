@@ -7,6 +7,9 @@ from uuid import UUID
 from packages.core.domain.models import (
     Agent,
     AgentStatus,
+    CandidateLifecycle,
+    CandidateState,
+    CriticFinding,
     CrossPollinationPacket,
     Evaluation,
     Generation,
@@ -74,6 +77,27 @@ class LineageRepository(Protocol):
     def list_for_generation(self, generation_id: UUID) -> list[LineageLink]: ...
 
 
+class CandidateStateRepository(Protocol):
+    def add_many(self, states: Iterable[CandidateState]) -> list[CandidateState]: ...
+    def get_for_submission(self, submission_id: UUID) -> CandidateState | None: ...
+    def list_for_generation(self, generation_id: UUID) -> list[CandidateState]: ...
+    def update_status(
+        self,
+        submission_id: UUID,
+        status: CandidateLifecycle,
+    ) -> CandidateState: ...
+
+
+class CriticFindingRepository(Protocol):
+    def add(self, finding: CriticFinding) -> CriticFinding: ...
+    def get_for_agent_submission(
+        self,
+        critic_agent_id: UUID,
+        submission_id: UUID,
+    ) -> CriticFinding | None: ...
+    def list_for_generation(self, generation_id: UUID) -> list[CriticFinding]: ...
+
+
 class CrossPollinationRepository(Protocol):
     def add_many(
         self,
@@ -124,6 +148,8 @@ class UnitOfWork(Protocol):
     evaluations: EvaluationRepository
     selections: SelectionRepository
     lineages: LineageRepository
+    candidate_states: CandidateStateRepository
+    critic_findings: CriticFindingRepository
     cross_pollination: CrossPollinationRepository
     knowledge: KnowledgeRepository
     model_profiles: ModelProfileRepository

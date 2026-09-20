@@ -11,6 +11,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from packages.core.domain.models import (
     Agent,
     AgentStatus,
+    CandidateLifecycle,
+    CandidateState,
+    CriticFinding,
     CrossPollinationPacket,
     Evaluation,
     Generation,
@@ -28,6 +31,8 @@ from packages.core.domain.models import (
 from packages.core.orchestration.state_machine import assert_run_transition
 from packages.persistence.mappers import (
     agent_from_record,
+    candidate_state_from_record,
+    critic_finding_from_record,
     cross_pollination_from_record,
     evaluation_from_record,
     generation_from_record,
@@ -43,6 +48,8 @@ from packages.persistence.mappers import (
 )
 from packages.persistence.models import (
     AgentRecord,
+    CandidateStateRecord,
+    CriticFindingRecord,
     CrossPollinationPacketRecord,
     EvaluationRecord,
     GenerationRecord,
@@ -87,6 +94,7 @@ class RunSqlRepository:
             survivor_count=run.survivor_count,
             fresh_agent_count=run.fresh_agent_count,
             redundancy_threshold=run.redundancy_threshold,
+            critic_count=run.critic_count,
         )
         self.session.add(record)
         self.session.flush()
@@ -345,6 +353,98 @@ class LineageSqlRepository:
         return [lineage_from_record(record) for record in records]
 
 
+class CandidateStateSqlRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add_many(self, states: Iterable[CandidateState]) -> list[CandidateState]:
+        records = [
+            CandidateStateRecord(
+                id=state.id,
+                generation_id=state.generation_id,
+                submission_id=state.submission_id,
+                status=state.status.value,
+            )
+            for state in states
+        ]
+        self.session.add_all(records)
+        self.session.flush()
+        return [candidate_state_from_record(record) for record in records]
+
+    def get_for_submission(self, submission_id: UUID) -> CandidateState | None:
+        record = self.session.execute(
+            select(CandidateStateRecord).where(
+                CandidateStateRecord.submission_id == submission_id
+            )
+        ).scalar_one_or_none()
+        return candidate_state_from_record(record) if record else None
+
+    def list_for_generation(self, generation_id: UUID) -> list[CandidateState]:
+        records = self.session.execute(
+            select(CandidateStateRecord)
+            .where(CandidateStateRecord.generation_id == generation_id)
+            .order_by(CandidateStateRecord.created_at, CandidateStateRecord.id)
+        ).scalars()
+        return [candidate_state_from_record(record) for record in records]
+
+    def update_status(
+        self,
+        submission_id: UUID,
+        status: CandidateLifecycle,
+    ) -> CandidateState:
+        record = self.session.execute(
+            select(CandidateStateRecord).where(
+                CandidateStateRecord.submission_id == submission_id
+            )
+        ).scalar_one_or_none()
+        if record is None:
+            raise KeyError(f"Candidate state not found: {submission_id}")
+        record.status = status.value
+        self.session.flush()
+        return candidate_state_from_record(record)
+
+
+class CriticFindingSqlRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, finding: CriticFinding) -> CriticFinding:
+        record = CriticFindingRecord(
+            id=finding.id,
+            generation_id=finding.generation_id,
+            critic_agent_id=finding.critic_agent_id,
+            submission_id=finding.submission_id,
+            fatal_error=finding.fatal_error,
+            confidence=finding.confidence,
+            critique=finding.critique,
+            counterexample=finding.counterexample,
+        )
+        self.session.add(record)
+        self.session.flush()
+        return critic_finding_from_record(record)
+
+    def get_for_agent_submission(
+        self,
+        critic_agent_id: UUID,
+        submission_id: UUID,
+    ) -> CriticFinding | None:
+        record = self.session.execute(
+            select(CriticFindingRecord).where(
+                CriticFindingRecord.critic_agent_id == critic_agent_id,
+                CriticFindingRecord.submission_id == submission_id,
+            )
+        ).scalar_one_or_none()
+        return critic_finding_from_record(record) if record else None
+
+    def list_for_generation(self, generation_id: UUID) -> list[CriticFinding]:
+        records = self.session.execute(
+            select(CriticFindingRecord)
+            .where(CriticFindingRecord.generation_id == generation_id)
+            .order_by(CriticFindingRecord.created_at, CriticFindingRecord.id)
+        ).scalars()
+        return [critic_finding_from_record(record) for record in records]
+
+
 class CrossPollinationSqlRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -534,6 +634,8 @@ class SqlAlchemyUnitOfWork:
         self.evaluations = EvaluationSqlRepository(self.session)
         self.selections = SelectionSqlRepository(self.session)
         self.lineages = LineageSqlRepository(self.session)
+        self.candidate_states = CandidateStateSqlRepository(self.session)
+        self.critic_findings = CriticFindingSqlRepository(self.session)
         self.cross_pollination = CrossPollinationSqlRepository(self.session)
         self.knowledge = KnowledgeSqlRepository(self.session)
         self.model_profiles = ModelProfileSqlRepository(self.session)

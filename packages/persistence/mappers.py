@@ -4,7 +4,10 @@ from packages.core.domain.models import (
     Agent,
     AgentOrigin,
     AgentStatus,
+    CandidateLifecycle,
+    CandidateState,
     ClaimDraft,
+    CriticFinding,
     CrossPollinationKind,
     CrossPollinationPacket,
     Evaluation,
@@ -31,6 +34,8 @@ from packages.core.domain.models import (
 )
 from packages.persistence.models import (
     AgentRecord,
+    CandidateStateRecord,
+    CriticFindingRecord,
     CrossPollinationPacketRecord,
     EvaluationRecord,
     GenerationRecord,
@@ -61,6 +66,7 @@ def run_from_record(record: RunRecord) -> Run:
         survivor_count=record.survivor_count,
         fresh_agent_count=record.fresh_agent_count,
         redundancy_threshold=record.redundancy_threshold,
+        critic_count=record.critic_count,
     )
 
 
@@ -132,6 +138,28 @@ def lineage_from_record(record: LineageLinkRecord) -> LineageLink:
         child_agent_id=record.child_agent_id,
         parent_submission_id=record.parent_submission_id,
         mutation_type=MutationType(record.mutation_type),
+    )
+
+
+def candidate_state_from_record(record: CandidateStateRecord) -> CandidateState:
+    return CandidateState(
+        id=record.id,
+        generation_id=record.generation_id,
+        submission_id=record.submission_id,
+        status=CandidateLifecycle(record.status),
+    )
+
+
+def critic_finding_from_record(record: CriticFindingRecord) -> CriticFinding:
+    return CriticFinding(
+        id=record.id,
+        generation_id=record.generation_id,
+        critic_agent_id=record.critic_agent_id,
+        submission_id=record.submission_id,
+        fatal_error=record.fatal_error,
+        confidence=record.confidence,
+        critique=record.critique,
+        counterexample=record.counterexample,
     )
 
 

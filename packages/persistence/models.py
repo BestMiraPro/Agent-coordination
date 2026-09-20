@@ -26,6 +26,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from packages.core.domain.models import (
     AgentOrigin,
     AgentStatus,
+    CandidateLifecycle,
     JobStatus,
     KnowledgeStatus,
     ModelCallStatus,
@@ -68,6 +69,7 @@ class RunRecord(TimestampMixin, Base):
             "redundancy_threshold >= 0 AND redundancy_threshold <= 1",
             name="ck_run_redundancy_threshold",
         ),
+        CheckConstraint("critic_count >= 0", name="ck_run_critic_nonnegative"),
     )
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     problem_id: Mapped[UUID] = mapped_column(
@@ -81,6 +83,7 @@ class RunRecord(TimestampMixin, Base):
     survivor_count: Mapped[int] = mapped_column(Integer, nullable=False, default=2, server_default="2")
     fresh_agent_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     redundancy_threshold: Mapped[float] = mapped_column(Float, nullable=False, default=0.78, server_default="0.78")
+    critic_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
 
 
 class GenerationRecord(TimestampMixin, Base):
@@ -271,6 +274,55 @@ class CrossPollinationPacketRecord(TimestampMixin, Base):
     payload: Mapped[dict[str, Any]] = mapped_column(
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
+
+
+class CandidateStateRecord(TimestampMixin, Base):
+    __tablename__ = "candidate_states"
+    __table_args__ = (
+        UniqueConstraint("submission_id", name="uq_candidate_state_submission"),
+    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    generation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("generations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    submission_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("submissions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=CandidateLifecycle.PROPOSED.value,
+        server_default=CandidateLifecycle.PROPOSED.value,
+    )
+
+
+class CriticFindingRecord(TimestampMixin, Base):
+    __tablename__ = "critic_findings"
+    __table_args__ = (
+        UniqueConstraint(
+            "critic_agent_id",
+            "submission_id",
+            name="uq_critic_finding_agent_submission",
+        ),
+        CheckConstraint(
+            "confidence >= 0 AND confidence <= 1",
+            name="ck_critic_confidence",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    generation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("generations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    critic_agent_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    submission_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("submissions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    fatal_error: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    critique: Mapped[str] = mapped_column(Text, nullable=False)
+    counterexample: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 class ModelProfileRecord(TimestampMixin, Base):
