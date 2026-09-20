@@ -101,6 +101,8 @@ def create_app(
             max_generations=body.max_generations,
             population_size=body.population_size,
             survivor_count=body.survivor_count,
+            fresh_agent_count=body.fresh_agent_count,
+            redundancy_threshold=body.redundancy_threshold,
         )
 
         with uow() as work:
@@ -121,6 +123,8 @@ def create_app(
                         "max_generations": run.max_generations,
                         "population_size": run.population_size,
                         "survivor_count": run.survivor_count,
+                        "fresh_agent_count": run.fresh_agent_count,
+                        "redundancy_threshold": run.redundancy_threshold,
                     },
                 )
             )
@@ -139,6 +143,8 @@ def create_app(
             max_generations=run.max_generations,
             population_size=run.population_size,
             survivor_count=run.survivor_count,
+            fresh_agent_count=run.fresh_agent_count,
+            redundancy_threshold=run.redundancy_threshold,
         )
 
     @app.get("/runs/{run_id}", response_model=RunDetailResponse)
@@ -175,6 +181,8 @@ def create_app(
                                 id=agent.id,
                                 role=agent.role,
                                 status=agent.status,
+                                niche=agent.niche,
+                                origin=agent.origin,
                             )
                             for agent in agents
                         ],
@@ -225,6 +233,11 @@ def create_app(
                                 rank=decision.rank,
                                 score_vector=decision.score_vector,
                                 reason=decision.reason,
+                                selection_kind=decision.selection_kind,
+                                novelty_score=decision.novelty_score,
+                                redundant_with_submission_id=(
+                                    decision.redundant_with_submission_id
+                                ),
                             )
                             for decision in selections
                         ],
@@ -246,6 +259,8 @@ def create_app(
             max_generations=run.max_generations,
             population_size=run.population_size,
             survivor_count=run.survivor_count,
+            fresh_agent_count=run.fresh_agent_count,
+            redundancy_threshold=run.redundancy_threshold,
             problem=ProblemResponse(
                 id=problem.id,
                 title=problem.title,
