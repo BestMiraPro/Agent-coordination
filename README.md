@@ -1,69 +1,92 @@
 # Agent Coordination
 
-A research-oriented multi-agent coordination system designed to maximize
-verified research progress per unit of time and constrained compute budget.
+A durable AI research laboratory and software-engineering factory designed to
+maximize verified progress per unit of wall-clock time and constrained compute
+budget.
 
-The repository now implements Phases 1–3:
+The repository implements the full Phase 0–10 master-plan path at its current
+MVP/architecture boundary.
+
+## Research workflow
 
 ```text
 problem
  -> explicit research niches
- -> independent research population
- -> blind multidimensional judging
- -> quality + novelty + redundancy analysis
+ -> independent population
+ -> structured submissions
+ -> blind multidimensional judges
+ -> novelty + redundancy analysis
  -> elite / novelty / wildcard survival
- -> eliminate low-value or redundant branches
- -> clone surviving ideas with mutation
- -> inject fresh blind explorers
- -> persist lineage and diversity decisions
- -> next generation
- -> ... until configured generation limit
+ -> persistent research memory
+ -> selective cross-pollination
+ -> cloned mutations + fresh blind explorers
+ -> dedicated adversarial critics
+ -> deterministic verification
+ -> verified/refuted candidate lifecycle
+ -> adaptive model routing
+ -> control-room inspection and intervention
 ```
 
-The orchestration state machine, durable PostgreSQL queue, API, worker,
-provider boundary, evolutionary policy, diversity policy, lineage persistence,
-and live web control room are implemented.
+Research agents are disposable. Typed knowledge, lineage, selection decisions,
+critic findings, verification results, model-call accounting, and events are
+durable PostgreSQL state.
 
-## Run the complete local stack
+## Engineering workflow
+
+```text
+objective
+ -> planner
+ -> primary implementer + test specialist
+ -> deterministic artifact checks
+ -> system reviewer
+ -> bounded repair loop
+ -> re-test + re-review
+ -> completed / failed
+```
+
+The engineering factory reuses the same provider abstraction, adaptive router,
+durable PostgreSQL queue, retries, model-call accounting, and control room while
+remaining separate from research-tournament selection policy.
+
+## Implemented phases
+
+| Phase | Capability | Status |
+| --- | --- | --- |
+| 0 | Stable provider/domain/repository/orchestration boundaries | Implemented |
+| 1 | Baseline vertical research slice | Implemented |
+| 2 | Multi-generation evolution, cloning, mutation, lineage | Implemented |
+| 3 | Niches, novelty, redundancy, wildcards, fresh explorers | Implemented |
+| 4 | Persistent typed research memory | Implemented |
+| 5 | Selective targeted cross-pollination | Implemented |
+| 6 | Dedicated critics and candidate lifecycle | Implemented |
+| 7 | Deterministic verification framework and durable results | Implemented |
+| 8 | Adaptive quality/cost/latency/scarcity routing | Implemented |
+| 9 | Production-style research control room | Implemented |
+| 10 | Separate durable engineering factory | Implemented |
+
+Detailed contracts live in `docs/phase-1-implementation-contract.md` through
+`docs/phase-10.md`.
+
+## Run locally
 
 ```bash
 docker compose up --build
 ```
 
-Open the control room at `http://localhost:3000`.
-The API is exposed at `http://localhost:8000`.
+Then open:
 
-The default worker uses a deterministic fake provider, so a complete
-multi-generation diversity-preserving tournament runs without credentials.
+- control room: `http://localhost:3000`
+- API: `http://localhost:8000`
 
-## Tournament defaults
+The default worker uses a deterministic fake provider, so both research and
+engineering workflows can be exercised without credentials.
 
-Runs created through the API/control room default to:
+## Real inference
 
-```text
-generations:          3
-population:           4
-survivors:            2
-fresh explorers:      1 per later generation
-redundancy threshold: 0.78
-judges:               2 per generation
-```
+The first production provider boundary is OpenAI-compatible inference, with W&B
+Inference as the configured example.
 
-With three or more survivor slots the selection policy explicitly reserves
-elite, novelty, and wildcard survival. With two slots it preserves an elite and
-a novelty branch.
-
-Research agents rotate through explicit constructive, skeptical,
-counterexample, computational, special-case, generalization,
-alternative-formulation, and lemma-decomposition niches.
-
-Novelty and redundancy are currently measured with deterministic lexical
-Jaccard similarity over structured submission content. This costs no additional
-model calls and provides a benchmarkable baseline before considering embeddings.
-
-## Use W&B Inference
-
-Create a local `.env` from `.env.example`, then set:
+Create `.env` from `.env.example` and set:
 
 ```bash
 INFERENCE_PROVIDER=wandb
@@ -73,11 +96,66 @@ INFERENCE_BASE_URL=https://api.inference.wandb.ai/v1
 INFERENCE_PROJECT=<optional team/project>
 ```
 
-The model can be replaced with another model available to the configured
-OpenAI-compatible endpoint without changing tournament orchestration. API keys
-are not persisted in the database or repository.
+No API key is persisted in model profiles, model calls, or run state.
 
-## Development without Docker
+The adaptive router has durable model-state support for task quality, marginal
+cash cost, credit consumption, latency, scarcity, failures, rate-limit pressure,
+and concurrency. A single-provider deployment is valid; adding more provider
+routes does not require changing tournament or engineering orchestration.
+
+## Research defaults
+
+The control room currently defaults to:
+
+```text
+generations:          3
+population:           6
+survivors:            3
+fresh explorers:      1 per later generation
+critics:              1
+redundancy threshold: 0.78
+final verification:   enabled
+judges:               2 per generation
+```
+
+With three survivor slots, policy reserves an elite, a novelty survivor, and a
+deterministic wildcard where possible. Fatal or critic-refuted branches are
+excluded while non-fatal alternatives exist.
+
+Fresh explorers do not receive parent candidates, historical research memory,
+or cross-pollination packets.
+
+## Verification boundary
+
+Verification is deliberately stronger than model consensus. The current
+deterministic engine checks:
+
+- survival of configured adversarial critics,
+- explicit support for structured claims,
+- Python syntax when Python code blocks are supplied.
+
+The durable verifier interface is designed for additional sandbox, solver,
+proof-assistant, and source/citation adapters. Those external systems are not
+silently emulated: a candidate is only marked `VERIFIED` when the configured
+deterministic checks actually pass.
+
+## Engineering safety boundary
+
+Generated engineering code is stored as structured artifacts. The current local
+test runner performs deterministic non-executing checks for:
+
+- artifact presence,
+- safe relative paths,
+- duplicate paths,
+- Python compilation,
+- JSON parsing,
+- presence of test artifacts.
+
+It intentionally does **not** execute arbitrary model-generated code on the
+worker host. Real unit/integration/property/fuzz execution should be connected
+through an isolated disposable sandbox rather than weakening this boundary.
+
+## Development
 
 ```bash
 python -m pip install -e ".[dev]"
@@ -86,13 +164,13 @@ alembic upgrade head
 make api
 ```
 
-In another terminal:
+In separate terminals:
 
 ```bash
 make worker
 ```
 
-And in another:
+and:
 
 ```bash
 cd apps/web
@@ -108,22 +186,20 @@ ruff check .
 cd apps/web && npm run build
 ```
 
-CI validates Docker Compose, applies all PostgreSQL migrations, runs backend
-unit/integration/provider/eval tests, and builds the production Next.js app.
+CI validates Docker Compose, migrates PostgreSQL through all schema revisions,
+runs unit/integration/provider/eval tests, and builds the production Next.js
+control room.
 
-## Architectural principles
+## Core invariants
 
-- LLMs do research; deterministic code owns orchestration state.
-- Agents are disposable; useful research artifacts should become durable.
-- Provider-specific logic never leaks into the core domain.
-- Every model call is attributable, measurable, and retry-safe.
-- Judges do not see model identity, niche, origin, or lineage metadata.
-- Selection never relies on one scalar fitness score.
-- Diversity is protected without treating novelty as correctness.
-- Fresh blind exploration remains available after convergence pressure begins.
-- Convergence is not correctness; verification outranks consensus.
-- Infrastructure is added only when measurements justify it.
-
-See `docs/architecture.md`, `docs/master-plan.md`,
-`docs/phase-1-implementation-contract.md`, `docs/phase-2.md`, and
-`docs/phase-3.md`.
+- deterministic code owns orchestration state;
+- model identity stays hidden from blind research judges;
+- selection never collapses to one scalar fitness score;
+- diversity is protected without treating novelty as correctness;
+- agents die, knowledge survives;
+- cross-pollination is targeted rather than all-to-all;
+- critic/refutation state affects later selection;
+- verification outranks consensus;
+- model routing accounts for quality, cost, latency, scarcity, and reliability;
+- research and engineering share infrastructure but use different policies;
+- untrusted generated code is not executed on the worker host.

@@ -6,6 +6,30 @@ Build a general-purpose AI research laboratory that can discover, preserve, chal
 
 The system evolves from a simple baseline into an adaptive research tournament only after each mechanism proves value in benchmark experiments.
 
+## Implementation status
+
+All Phase 0–10 architectural milestones are implemented in the repository.
+
+| Phase | Status | Primary implementation |
+| --- | --- | --- |
+| 0 | Complete | Core domain/provider/UOW boundaries |
+| 1 | Complete | Baseline researchers, judges, queue, API, UI |
+| 2 | Complete | Tournament evolution and lineage |
+| 3 | Complete | Diversity preservation and fresh exploration |
+| 4 | Complete | Durable typed research memory |
+| 5 | Complete | Selective cross-pollination |
+| 6 | Complete | Adversarial critics and candidate lifecycle |
+| 7 | Complete | Deterministic verification framework |
+| 8 | Complete | Adaptive model-state routing |
+| 9 | Complete | Research control room, metrics, manual knowledge |
+| 10 | Complete | Durable engineering factory and repair loop |
+
+"Complete" here means the phase's architecture and deterministic acceptance
+path are implemented and covered by CI. It does not imply that every optional
+external verifier, model provider, or future production integration exists.
+In particular, arbitrary generated code is not executed on the worker host;
+stronger executable verification should use an isolated sandbox.
+
 ## Product loop
 
 Long-term target:
