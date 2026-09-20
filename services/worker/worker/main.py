@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from packages.core.domain.models import ModelProfile, ModelState
+from packages.core.engineering.orchestration import EngineeringOrchestrator
 from packages.core.orchestration.tournament import TournamentOrchestrator
 from packages.persistence.database import build_engine, build_session_factory
 from packages.persistence.jobs import DurableJobQueue
@@ -12,6 +13,10 @@ from packages.providers.fake import PhaseOneFakeProvider
 from packages.providers.openai_compatible import OpenAICompatibleProvider
 from packages.providers.routed import AdaptiveProvider, ProviderRoute
 from services.worker.worker.handlers.baseline import BaselineJobHandler
+from services.worker.worker.handlers.engineering import (
+    CompositeJobHandler,
+    EngineeringJobHandler,
+)
 from services.worker.worker.runtime import run_once, run_worker
 from services.worker.worker.settings import WorkerSettings
 
@@ -52,7 +57,7 @@ def build_provider(settings: WorkerSettings) -> tuple[ModelProvider, str, str, d
 
 def build_handler(
     settings: WorkerSettings | None = None,
-) -> tuple[DurableJobQueue, BaselineJobHandler, WorkerSettings]:
+) -> tuple[DurableJobQueue, CompositeJobHandler, WorkerSettings]:
     settings = settings or WorkerSettings()
     engine = build_engine()
     session_factory = build_session_factory(engine)
@@ -107,13 +112,22 @@ def build_handler(
 
     queue = DurableJobQueue(session_factory, worker_id=settings.worker_id)
     orchestrator = TournamentOrchestrator(uow_factory, queue)
-    handler = BaselineJobHandler(
+    research_handler = BaselineJobHandler(
         uow_factory=uow_factory,
         orchestrator=orchestrator,
         provider=provider,
         model_profile_id=profile.id,
         model_profile_name=profile.model,
     )
+    engineering_orchestrator = EngineeringOrchestrator(uow_factory, queue)
+    engineering_handler = EngineeringJobHandler(
+        uow_factory=uow_factory,
+        orchestrator=engineering_orchestrator,
+        provider=provider,
+        model_profile_id=profile.id,
+        model_profile_name=profile.model,
+    )
+    handler = CompositeJobHandler(research_handler, engineering_handler)
     return queue, handler, settings
 
 
