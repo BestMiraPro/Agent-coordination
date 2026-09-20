@@ -5,14 +5,17 @@ from uuid import UUID
 
 from packages.core.domain.models import (
     Agent,
+    AgentOrigin,
     AgentStatus,
     Generation,
     JobType,
     LineageLink,
     MutationType,
+    ResearchNiche,
     RunEvent,
     RunEventType,
     RunStatus,
+    SelectionKind,
 )
 from packages.core.orchestration.tournament_policy import TournamentPolicy
 from packages.core.ports.repositories import JobQueue, UnitOfWork
@@ -24,6 +27,17 @@ _MUTATION_CYCLE = (
     MutationType.FALSIFY,
     MutationType.REDERIVE,
     MutationType.GENERALIZE,
+)
+
+_NICHE_CYCLE = (
+    ResearchNiche.CONSTRUCTIVE,
+    ResearchNiche.SKEPTICAL,
+    ResearchNiche.COUNTEREXAMPLE,
+    ResearchNiche.COMPUTATIONAL,
+    ResearchNiche.SPECIAL_CASES,
+    ResearchNiche.GENERALIZATION,
+    ResearchNiche.ALTERNATIVE_FORMULATION,
+    ResearchNiche.LEMMA_DECOMPOSITION,
 )
 
 
@@ -72,6 +86,8 @@ class TournamentOrchestrator:
                             "max_generations": run.max_generations,
                             "population_size": run.population_size,
                             "survivor_count": run.survivor_count,
+                            "fresh_agent_count": run.fresh_agent_count,
+                            "redundancy_threshold": run.redundancy_threshold,
                         },
                     )
                 )
@@ -295,9 +311,58 @@ class TournamentOrchestrator:
                         submissions=submissions,
                         evaluations=evaluations,
                         survivor_count=run.survivor_count,
+                        redundancy_threshold=run.redundancy_threshold,
                     )
                     uow.selections.add_many(decisions)
+                    uow.events.append(
+                        RunEvent(
+                            run_id=run_id,
+                            event_type=RunEventType.DIVERSITY_ANALYZED.value,
+                            payload={
+                                "generation_id": str(generation.id),
+                                "redundancy_threshold": run.redundancy_threshold,
+                                "redundant_count": sum(
+                                    item.redundant_with_submission_id is not None
+                                    for item in decisions
+                                ),
+                                "mean_novelty": (
+                                    sum(item.novelty_score for item in decisions)
+                                    / len(decisions)
+                                ),
+                            },
+                        )
+                    )
                     for decision in decisions:
+                        if decision.redundant_with_submission_id is not None:
+                            uow.events.append(
+                                RunEvent(
+                                    run_id=run_id,
+                                    event_type=RunEventType.REDUNDANCY_DETECTED.value,
+                                    payload={
+                                        "generation_id": str(generation.id),
+                                        "submission_id": str(decision.submission_id),
+                                        "redundant_with_submission_id": str(
+                                            decision.redundant_with_submission_id
+                                        ),
+                                        "novelty_score": decision.novelty_score,
+                                    },
+                                )
+                            )
+                        if (
+                            decision.selected
+                            and decision.selection_kind == SelectionKind.WILDCARD
+                        ):
+                            uow.events.append(
+                                RunEvent(
+                                    run_id=run_id,
+                                    event_type=RunEventType.WILDCARD_SELECTED.value,
+                                    payload={
+                                        "generation_id": str(generation.id),
+                                        "submission_id": str(decision.submission_id),
+                                        "rank": decision.rank,
+                                    },
+                                )
+                            )
                         uow.events.append(
                             RunEvent(
                                 run_id=run_id,
@@ -311,6 +376,13 @@ class TournamentOrchestrator:
                                     "submission_id": str(decision.submission_id),
                                     "rank": decision.rank,
                                     "score_vector": decision.score_vector,
+                                    "selection_kind": decision.selection_kind.value,
+                                    "novelty_score": decision.novelty_score,
+                                    "redundant_with_submission_id": (
+                                        str(decision.redundant_with_submission_id)
+                                        if decision.redundant_with_submission_id
+                                        else None
+                                    ),
                                 },
                             )
                         )
@@ -352,10 +424,19 @@ class TournamentOrchestrator:
 
                 researchers = self._researchers(uow, next_generation.id)
                 if not researchers:
+                    clone_count = run.population_size - run.fresh_agent_count
                     children = [
                         Agent(
                             generation_id=next_generation.id,
                             role=f"researcher:{index}",
+                            niche=_NICHE_CYCLE[
+                                (next_generation.index + index) % len(_NICHE_CYCLE)
+                            ],
+                            origin=(
+                                AgentOrigin.CLONED
+                                if index < clone_count
+                                else AgentOrigin.FRESH
+                            ),
                         )
                         for index in range(run.population_size)
                     ]
@@ -363,6 +444,33 @@ class TournamentOrchestrator:
 
                     lineage_links: list[LineageLink] = []
                     for index, child in enumerate(researchers):
+                        uow.events.append(
+                            RunEvent(
+                                run_id=run_id,
+                                event_type=RunEventType.AGENT_SPAWNED.value,
+                                payload={
+                                    "agent_id": str(child.id),
+                                    "role": child.role,
+                                    "generation_id": str(next_generation.id),
+                                    "niche": child.niche.value,
+                                    "origin": child.origin.value,
+                                },
+                            )
+                        )
+                        if child.origin == AgentOrigin.FRESH:
+                            uow.events.append(
+                                RunEvent(
+                                    run_id=run_id,
+                                    event_type=RunEventType.FRESH_AGENT_INJECTED.value,
+                                    payload={
+                                        "agent_id": str(child.id),
+                                        "generation_id": str(next_generation.id),
+                                        "niche": child.niche.value,
+                                    },
+                                )
+                            )
+                            continue
+
                         parent = selected[index % len(selected)]
                         mutation = _MUTATION_CYCLE[index % len(_MUTATION_CYCLE)]
                         lineage_links.append(
@@ -381,10 +489,12 @@ class TournamentOrchestrator:
                                     "parent_submission_id": str(parent.submission_id),
                                     "mutation_type": mutation.value,
                                     "generation_id": str(next_generation.id),
+                                    "niche": child.niche.value,
                                 },
                             )
                         )
-                    uow.lineages.add_many(lineage_links)
+                    if lineage_links:
+                        uow.lineages.add_many(lineage_links)
 
                 uow.runs.update_status(run_id, RunStatus.RESEARCHING)
                 uow.events.append(
@@ -447,7 +557,14 @@ class TournamentOrchestrator:
             for agent in self._researchers(uow, generation.id)
         }
         missing = [
-            Agent(generation_id=generation.id, role=f"researcher:{index}")
+            Agent(
+                generation_id=generation.id,
+                role=f"researcher:{index}",
+                niche=_NICHE_CYCLE[
+                    (generation.index + index) % len(_NICHE_CYCLE)
+                ],
+                origin=AgentOrigin.INITIAL,
+            )
             for index in range(population_size)
             if f"researcher:{index}" not in existing
         ]
@@ -462,6 +579,8 @@ class TournamentOrchestrator:
                             "agent_id": str(agent.id),
                             "role": agent.role,
                             "generation_id": str(generation.id),
+                            "niche": agent.niche.value,
+                            "origin": agent.origin.value,
                         },
                     )
                 )

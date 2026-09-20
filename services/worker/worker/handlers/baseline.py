@@ -154,6 +154,8 @@ class BaselineJobHandler:
         request = build_research_request(
             problem,
             self.model_profile_name,
+            niche=agent.niche,
+            origin=agent.origin,
             parent_submission=parent_submission,
             mutation_type=lineage.mutation_type if lineage is not None else None,
         )

@@ -2,7 +2,13 @@ from __future__ import annotations
 
 import json
 
-from packages.core.domain.models import MutationType, Problem, Submission
+from packages.core.domain.models import (
+    AgentOrigin,
+    MutationType,
+    Problem,
+    ResearchNiche,
+    Submission,
+)
 from packages.core.orchestration.baseline import BlindedSubmission
 from packages.core.structured_outputs import JudgeOutput, ResearcherOutput
 from packages.providers.base import ModelRequest
@@ -24,6 +30,35 @@ _MUTATION_INSTRUCTIONS: dict[MutationType, str] = {
     MutationType.GENERALIZE: (
         "Generalize the parent idea where justified, then check whether the generalization "
         "reveals a simpler proof, stronger result, or failure boundary."
+    ),
+}
+
+_NICHE_INSTRUCTIONS: dict[ResearchNiche, str] = {
+    ResearchNiche.CONSTRUCTIVE: (
+        "Seek a direct constructive solution with explicit intermediate steps."
+    ),
+    ResearchNiche.SKEPTICAL: (
+        "Challenge assumptions aggressively and look for hidden failure modes before "
+        "accepting any conclusion."
+    ),
+    ResearchNiche.COUNTEREXAMPLE: (
+        "Prioritize counterexamples, boundary cases, and attempts to disprove plausible claims."
+    ),
+    ResearchNiche.COMPUTATIONAL: (
+        "Prefer computable formulations, small experiments, enumerations, or algorithmic checks "
+        "that can expose structure."
+    ),
+    ResearchNiche.SPECIAL_CASES: (
+        "Solve informative special cases first and use them to constrain or build the general solution."
+    ),
+    ResearchNiche.GENERALIZATION: (
+        "Search for a stronger or more general formulation whose structure clarifies the original problem."
+    ),
+    ResearchNiche.ALTERNATIVE_FORMULATION: (
+        "Reframe the problem using a materially different representation, formalism, or decomposition."
+    ),
+    ResearchNiche.LEMMA_DECOMPOSITION: (
+        "Decompose the problem into minimal lemmas or subclaims and attack the bottleneck first."
     ),
 }
 
@@ -52,23 +87,40 @@ def build_research_request(
     problem: Problem,
     model_profile: str,
     *,
+    niche: ResearchNiche = ResearchNiche.CONSTRUCTIVE,
+    origin: AgentOrigin = AgentOrigin.INITIAL,
     parent_submission: Submission | None = None,
     mutation_type: MutationType | None = None,
 ) -> ModelRequest:
     schema = ResearcherOutput.model_json_schema()
-    metadata: dict[str, object] = {"problem_id": str(problem.id)}
+    metadata: dict[str, object] = {
+        "problem_id": str(problem.id),
+        "research_niche": niche.value,
+        "agent_origin": origin.value,
+    }
     task: dict[str, object] = {
         "title": problem.title,
         "problem": problem.prompt,
+        "research_niche": niche.value,
+        "niche_objective": _NICHE_INSTRUCTIONS[niche],
         "output_schema": schema,
     }
 
     if parent_submission is None:
-        system_instruction = (
-            "You are an independent research agent. Solve the problem from first "
-            "principles. Do not assume access to other agents. Return only valid JSON "
-            "matching the supplied schema, with no markdown fences or commentary."
-        )
+        if origin == AgentOrigin.FRESH:
+            system_instruction = (
+                "You are a fresh blind research explorer injected to prevent premature "
+                "convergence. You have no access to prior tournament candidates. Solve the "
+                "problem independently while following your assigned research niche. Return "
+                "only valid JSON matching the supplied schema, with no markdown fences."
+            )
+        else:
+            system_instruction = (
+                "You are an independent research agent. Solve the problem from first "
+                "principles while following your assigned research niche. Do not assume "
+                "access to other agents. Return only valid JSON matching the supplied schema, "
+                "with no markdown fences or commentary."
+            )
     else:
         if mutation_type is None:
             raise ValueError("mutation_type is required for a cloned research agent")
@@ -82,10 +134,10 @@ def build_research_request(
         task["mutation_objective"] = _MUTATION_INSTRUCTIONS[mutation_type]
         system_instruction = (
             "You are a cloned research branch in an evolutionary tournament. You receive "
-            "one parent candidate and a precise mutation objective. Build a new candidate, "
-            "not a summary of the parent. Preserve useful discoveries but independently "
-            "check every important claim. Return only valid JSON matching the supplied "
-            "schema, with no markdown fences or commentary."
+            "one parent candidate, a mutation objective, and an explicit research niche. "
+            "Build a new candidate, not a summary of the parent. Preserve useful discoveries "
+            "but independently check every important claim. Return only valid JSON matching "
+            "the supplied schema, with no markdown fences or commentary."
         )
 
     return ModelRequest(
@@ -133,10 +185,10 @@ def build_judge_request(
             {
                 "role": "system",
                 "content": (
-                    "You are an independent blind research judge. You do not know which model "
-                    "or agent produced any candidate. Evaluate every candidate separately. "
-                    "Prioritize correctness and explicit fatal errors over style or consensus. "
-                    "Return only valid JSON matching the supplied schema."
+                    "You are an independent blind research judge. You do not know which model, "
+                    "niche, lineage, or agent produced any candidate. Evaluate every candidate "
+                    "separately. Prioritize correctness and explicit fatal errors over style or "
+                    "consensus. Return only valid JSON matching the supplied schema."
                 ),
             },
             {
