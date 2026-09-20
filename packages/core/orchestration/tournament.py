@@ -7,6 +7,8 @@ from packages.core.domain.models import (
     Agent,
     AgentOrigin,
     AgentStatus,
+    CandidateLifecycle,
+    CandidateState,
     CrossPollinationKind,
     CrossPollinationPacket,
     Generation,
@@ -90,6 +92,7 @@ class TournamentOrchestrator:
                             "survivor_count": run.survivor_count,
                             "fresh_agent_count": run.fresh_agent_count,
                             "redundancy_threshold": run.redundancy_threshold,
+                            "critic_count": run.critic_count,
                         },
                     )
                 )
@@ -226,6 +229,8 @@ class TournamentOrchestrator:
         run_id: UUID,
         generation_id: UUID | None = None,
     ) -> bool:
+        critic_jobs: list[tuple[UUID, UUID, UUID]] = []
+
         with self.uow_factory() as uow:
             run = uow.runs.get(run_id)
             if run is None:
@@ -248,6 +253,165 @@ class TournamentOrchestrator:
                 return False
             if not self._evaluations_complete(uow, generation.id, judges):
                 return False
+
+            if run.critic_count > 0:
+                submissions = uow.submissions.list_for_generation(generation.id)
+                evaluations = uow.evaluations.list_for_generation(generation.id)
+                critics = self._critics(uow, generation.id)
+                states = uow.candidate_states.list_for_generation(generation.id)
+
+                if not critics:
+                    preview = self.policy.select(
+                        generation_id=generation.id,
+                        submissions=submissions,
+                        evaluations=evaluations,
+                        survivor_count=run.survivor_count,
+                        redundancy_threshold=run.redundancy_threshold,
+                    )
+                    selected = sorted(
+                        (item for item in preview if item.selected),
+                        key=lambda item: item.rank,
+                    )
+                    if not selected:
+                        raise RuntimeError("Critic stage has no leading candidate")
+                    target_submission_id = selected[0].submission_id
+
+                    if not states:
+                        selected_ids = {item.submission_id for item in selected}
+                        candidate_states = [
+                            CandidateState(
+                                generation_id=generation.id,
+                                submission_id=submission.id,
+                                status=(
+                                    CandidateLifecycle.UNDER_ATTACK
+                                    if submission.id == target_submission_id
+                                    else (
+                                        CandidateLifecycle.PROMISING
+                                        if submission.id in selected_ids
+                                        else CandidateLifecycle.PROPOSED
+                                    )
+                                ),
+                            )
+                            for submission in submissions
+                        ]
+                        uow.candidate_states.add_many(candidate_states)
+                        for state in candidate_states:
+                            uow.events.append(
+                                RunEvent(
+                                    run_id=run_id,
+                                    event_type=RunEventType.CANDIDATE_STATUS_CHANGED.value,
+                                    payload={
+                                        "submission_id": str(state.submission_id),
+                                        "status": state.status.value,
+                                        "generation_id": str(generation.id),
+                                    },
+                                )
+                            )
+
+                    critics = uow.agents.add_many(
+                        [
+                            Agent(
+                                generation_id=generation.id,
+                                role=f"critic:{index}",
+                            )
+                            for index in range(run.critic_count)
+                        ]
+                    )
+                    for critic in critics:
+                        uow.events.append(
+                            RunEvent(
+                                run_id=run_id,
+                                event_type=RunEventType.AGENT_SPAWNED.value,
+                                payload={
+                                    "agent_id": str(critic.id),
+                                    "role": critic.role,
+                                    "generation_id": str(generation.id),
+                                },
+                            )
+                        )
+                    uow.commit()
+                else:
+                    target_state = next(
+                        (
+                            state
+                            for state in states
+                            if state.status == CandidateLifecycle.UNDER_ATTACK
+                        ),
+                        None,
+                    )
+                    if target_state is None:
+                        findings = uow.critic_findings.list_for_generation(generation.id)
+                        if len(findings) >= run.critic_count and all(
+                            critic.status == AgentStatus.COMPLETED for critic in critics
+                        ):
+                            target_submission_id = findings[0].submission_id
+                        else:
+                            return False
+                    else:
+                        target_submission_id = target_state.submission_id
+
+                critics = self._critics(uow, generation.id)
+                if any(critic.status == AgentStatus.FAILED for critic in critics):
+                    self.fail_run(run_id, "critic failed")
+                    return False
+
+                if not all(critic.status == AgentStatus.COMPLETED for critic in critics):
+                    critic_jobs = [
+                        (critic.id, generation.id, target_submission_id)
+                        for critic in critics
+                        if critic.status != AgentStatus.COMPLETED
+                    ]
+                else:
+                    findings = uow.critic_findings.list_for_generation(generation.id)
+                    relevant = [
+                        finding
+                        for finding in findings
+                        if finding.submission_id == target_submission_id
+                    ]
+                    if len(relevant) != run.critic_count:
+                        return False
+                    target_status = (
+                        CandidateLifecycle.REFUTED
+                        if any(finding.fatal_error for finding in relevant)
+                        else CandidateLifecycle.VERIFICATION
+                    )
+                    current = uow.candidate_states.get_for_submission(
+                        target_submission_id
+                    )
+                    if current is not None and current.status != target_status:
+                        uow.candidate_states.update_status(
+                            target_submission_id,
+                            target_status,
+                        )
+                        uow.events.append(
+                            RunEvent(
+                                run_id=run_id,
+                                event_type=RunEventType.CANDIDATE_STATUS_CHANGED.value,
+                                payload={
+                                    "submission_id": str(target_submission_id),
+                                    "status": target_status.value,
+                                    "generation_id": str(generation.id),
+                                },
+                            )
+                        )
+                        uow.commit()
+
+        if critic_jobs:
+            for critic_id, target_generation_id, target_submission_id in critic_jobs:
+                self.queue.enqueue(
+                    JobType.RUN_CRITIC,
+                    {
+                        "run_id": str(run_id),
+                        "generation_id": str(target_generation_id),
+                        "agent_id": str(critic_id),
+                        "submission_id": str(target_submission_id),
+                    },
+                    idempotency_key=(
+                        f"run:{run_id}:generation:{target_generation_id}:"
+                        f"critic:{critic_id}:submission:{target_submission_id}"
+                    ),
+                )
+            return True
 
         self.queue.enqueue(
             JobType.FINALIZE_RUN,
@@ -308,12 +472,20 @@ class TournamentOrchestrator:
                 if not decisions:
                     submissions = uow.submissions.list_for_generation(generation.id)
                     evaluations = uow.evaluations.list_for_generation(generation.id)
+                    refuted_submission_ids = {
+                        state.submission_id
+                        for state in uow.candidate_states.list_for_generation(
+                            generation.id
+                        )
+                        if state.status == CandidateLifecycle.REFUTED
+                    }
                     decisions = self.policy.select(
                         generation_id=generation.id,
                         submissions=submissions,
                         evaluations=evaluations,
                         survivor_count=run.survivor_count,
                         redundancy_threshold=run.redundancy_threshold,
+                        refuted_submission_ids=refuted_submission_ids,
                     )
                     uow.selections.add_many(decisions)
                     uow.events.append(
@@ -686,6 +858,14 @@ class TournamentOrchestrator:
             agent
             for agent in uow.agents.list_for_generation(generation_id)
             if agent.role.startswith("judge:")
+        ]
+
+    @staticmethod
+    def _critics(uow: UnitOfWork, generation_id: UUID) -> list[Agent]:
+        return [
+            agent
+            for agent in uow.agents.list_for_generation(generation_id)
+            if agent.role.startswith("critic:")
         ]
 
     @staticmethod
