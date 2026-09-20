@@ -20,9 +20,11 @@ from packages.core.domain.models import (
     RunEventType,
     RunStatus,
     SelectionKind,
+    VerificationStatus,
 )
 from packages.core.orchestration.tournament_policy import TournamentPolicy
 from packages.core.ports.repositories import JobQueue, UnitOfWork
+from packages.core.verification.engine import VerificationEngine
 
 
 JUDGE_COUNT = 2
@@ -51,10 +53,12 @@ class TournamentOrchestrator:
         uow_factory: Callable[[], UnitOfWork],
         queue: JobQueue,
         policy: TournamentPolicy | None = None,
+        verification_engine: VerificationEngine | None = None,
     ) -> None:
         self.uow_factory = uow_factory
         self.queue = queue
         self.policy = policy or TournamentPolicy()
+        self.verification_engine = verification_engine or VerificationEngine()
 
     def start_run(self, run_id: UUID) -> Generation:
         with self.uow_factory() as uow:
@@ -454,6 +458,133 @@ class TournamentOrchestrator:
                     raise RuntimeError("Run cannot advance before judging is complete")
 
                 if generation.index + 1 >= run.max_generations:
+                    submissions = uow.submissions.list_for_generation(generation.id)
+                    evaluations = uow.evaluations.list_for_generation(generation.id)
+                    states = uow.candidate_states.list_for_generation(generation.id)
+                    refuted_submission_ids = {
+                        state.submission_id
+                        for state in states
+                        if state.status == CandidateLifecycle.REFUTED
+                    }
+                    preview = self.policy.select(
+                        generation_id=generation.id,
+                        submissions=submissions,
+                        evaluations=evaluations,
+                        survivor_count=run.survivor_count,
+                        redundancy_threshold=run.redundancy_threshold,
+                        refuted_submission_ids=refuted_submission_ids,
+                    )
+                    finalists = sorted(
+                        (item for item in preview if item.selected),
+                        key=lambda item: item.rank,
+                    )
+                    if not finalists:
+                        raise RuntimeError("Final generation has no viable candidate")
+                    target_submission_id = finalists[0].submission_id
+                    target_submission = uow.submissions.get(target_submission_id)
+                    if target_submission is None:
+                        raise RuntimeError("Final candidate submission is missing")
+
+                    current_state = uow.candidate_states.get_for_submission(
+                        target_submission_id
+                    )
+                    if current_state is None:
+                        current_state = uow.candidate_states.add_many(
+                            [
+                                CandidateState(
+                                    generation_id=generation.id,
+                                    submission_id=target_submission_id,
+                                    status=CandidateLifecycle.VERIFICATION,
+                                )
+                            ]
+                        )[0]
+                    elif current_state.status not in {
+                        CandidateLifecycle.REFUTED,
+                        CandidateLifecycle.VERIFIED,
+                        CandidateLifecycle.VERIFICATION,
+                    }:
+                        current_state = uow.candidate_states.update_status(
+                            target_submission_id,
+                            CandidateLifecycle.VERIFICATION,
+                        )
+
+                    verification_status = None
+                    if run.verification_enabled:
+                        existing_results = uow.verifications.list_for_submission(
+                            target_submission_id
+                        )
+                        if existing_results:
+                            verification_status = self.verification_engine.overall_status(
+                                existing_results
+                            )
+                        else:
+                            uow.events.append(
+                                RunEvent(
+                                    run_id=run_id,
+                                    event_type=RunEventType.VERIFICATION_STARTED.value,
+                                    payload={
+                                        "generation_id": str(generation.id),
+                                        "submission_id": str(target_submission_id),
+                                    },
+                                )
+                            )
+                            findings = uow.critic_findings.list_for_generation(
+                                generation.id
+                            )
+                            verification_results = self.verification_engine.verify(
+                                run_id=run_id,
+                                generation_id=generation.id,
+                                submission=target_submission,
+                                critic_findings=findings,
+                            )
+                            uow.verifications.add_many(verification_results)
+                            verification_status = self.verification_engine.overall_status(
+                                verification_results
+                            )
+                            for result in verification_results:
+                                event_type = {
+                                    VerificationStatus.PASSED: RunEventType.VERIFICATION_PASSED.value,
+                                    VerificationStatus.FAILED: RunEventType.VERIFICATION_FAILED.value,
+                                    VerificationStatus.INCONCLUSIVE: RunEventType.VERIFICATION_INCONCLUSIVE.value,
+                                }[result.status]
+                                uow.events.append(
+                                    RunEvent(
+                                        run_id=run_id,
+                                        event_type=event_type,
+                                        payload={
+                                            "verification_id": str(result.id),
+                                            "submission_id": str(target_submission_id),
+                                            "kind": result.kind.value,
+                                            "status": result.status.value,
+                                        },
+                                    )
+                                )
+
+                        target_status = {
+                            VerificationStatus.PASSED: CandidateLifecycle.VERIFIED,
+                            VerificationStatus.FAILED: CandidateLifecycle.REFUTED,
+                            VerificationStatus.INCONCLUSIVE: CandidateLifecycle.VERIFICATION,
+                        }[verification_status]
+                        updated = uow.candidate_states.get_for_submission(
+                            target_submission_id
+                        )
+                        if updated is not None and updated.status != target_status:
+                            uow.candidate_states.update_status(
+                                target_submission_id,
+                                target_status,
+                            )
+                            uow.events.append(
+                                RunEvent(
+                                    run_id=run_id,
+                                    event_type=RunEventType.CANDIDATE_STATUS_CHANGED.value,
+                                    payload={
+                                        "submission_id": str(target_submission_id),
+                                        "status": target_status.value,
+                                        "generation_id": str(generation.id),
+                                    },
+                                )
+                            )
+
                     uow.runs.update_status(run_id, RunStatus.COMPLETED)
                     uow.events.append(
                         RunEvent(
@@ -462,6 +593,12 @@ class TournamentOrchestrator:
                             payload={
                                 "generation_id": str(generation.id),
                                 "generation_index": generation.index,
+                                "final_submission_id": str(target_submission_id),
+                                "verification_status": (
+                                    verification_status.value
+                                    if verification_status is not None
+                                    else None
+                                ),
                             },
                         )
                     )

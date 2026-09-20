@@ -16,6 +16,8 @@ from packages.core.domain.models import (
     ResearchNiche,
     RunStatus,
     SelectionKind,
+    VerificationKind,
+    VerificationStatus,
 )
 
 
@@ -42,6 +44,7 @@ class RunCreate(BaseModel):
     fresh_agent_count: int = Field(default=1, ge=0, le=11)
     redundancy_threshold: float = Field(default=0.78, ge=0.0, le=1.0)
     critic_count: int = Field(default=1, ge=0, le=4)
+    verification_enabled: bool = True
 
     @model_validator(mode="after")
     def validate_tournament_shape(self) -> "RunCreate":
@@ -62,6 +65,7 @@ class RunCreatedResponse(BaseModel):
     fresh_agent_count: int
     redundancy_threshold: float
     critic_count: int
+    verification_enabled: bool
 
 
 class ClaimResponse(BaseModel):
@@ -133,6 +137,15 @@ class CriticFindingResponse(BaseModel):
     counterexample: str | None
 
 
+class VerificationResponse(BaseModel):
+    id: UUID
+    submission_id: UUID
+    kind: VerificationKind
+    status: VerificationStatus
+    detail: str
+    metadata: dict[str, Any]
+
+
 class CrossPollinationResponse(BaseModel):
     id: UUID
     target_agent_id: UUID
@@ -172,6 +185,7 @@ class GenerationResponse(BaseModel):
     knowledge: list[KnowledgeResponse]
     candidate_states: list[CandidateStateResponse]
     critic_findings: list[CriticFindingResponse]
+    verifications: list[VerificationResponse]
 
 
 class RunDetailResponse(BaseModel):
@@ -183,6 +197,7 @@ class RunDetailResponse(BaseModel):
     fresh_agent_count: int
     redundancy_threshold: float
     critic_count: int
+    verification_enabled: bool
     problem: ProblemResponse
     generations: list[GenerationResponse]
 

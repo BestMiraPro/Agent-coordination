@@ -108,6 +108,7 @@ def create_app(
             fresh_agent_count=body.fresh_agent_count,
             redundancy_threshold=body.redundancy_threshold,
             critic_count=body.critic_count,
+            verification_enabled=body.verification_enabled,
         )
 
         with uow() as work:
@@ -131,6 +132,7 @@ def create_app(
                         "fresh_agent_count": run.fresh_agent_count,
                         "redundancy_threshold": run.redundancy_threshold,
                         "critic_count": run.critic_count,
+                        "verification_enabled": run.verification_enabled,
                     },
                 )
             )
@@ -152,6 +154,7 @@ def create_app(
             fresh_agent_count=run.fresh_agent_count,
             redundancy_threshold=run.redundancy_threshold,
             critic_count=run.critic_count,
+            verification_enabled=run.verification_enabled,
         )
 
     @app.get("/runs/{run_id}", response_model=RunDetailResponse)
@@ -182,6 +185,7 @@ def create_app(
                 knowledge = work.knowledge.list_for_generation(generation.id)
                 candidate_states = work.candidate_states.list_for_generation(generation.id)
                 critic_findings = work.critic_findings.list_for_generation(generation.id)
+                verifications = work.verifications.list_for_generation(generation.id)
 
                 generations.append(
                     GenerationResponse(
@@ -304,6 +308,17 @@ def create_app(
                             )
                             for finding in critic_findings
                         ],
+                        verifications=[
+                            VerificationResponse(
+                                id=result.id,
+                                submission_id=result.submission_id,
+                                kind=result.kind,
+                                status=result.status,
+                                detail=result.detail,
+                                metadata=result.metadata,
+                            )
+                            for result in verifications
+                        ],
                     )
                 )
 
@@ -316,6 +331,7 @@ def create_app(
             fresh_agent_count=run.fresh_agent_count,
             redundancy_threshold=run.redundancy_threshold,
             critic_count=run.critic_count,
+            verification_enabled=run.verification_enabled,
             problem=ProblemResponse(
                 id=problem.id,
                 title=problem.title,
