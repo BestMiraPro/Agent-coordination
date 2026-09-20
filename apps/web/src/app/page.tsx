@@ -5,12 +5,21 @@ import {
   API_BASE_URL,
   Agent,
   Generation,
+  KnowledgeKind,
   Lineage,
+  ModelState,
+  Project,
   RunDetail,
   RunEvent,
+  RunMetrics,
   createProblem,
+  createProject,
   createRun,
+  getModelStates,
   getRun,
+  getRunMetrics,
+  injectKnowledge,
+  listProjects,
 } from "../lib/api";
 
 const EVENT_TYPES = [
@@ -31,6 +40,16 @@ const EVENT_TYPES = [
   "WILDCARD_SELECTED",
   "AGENT_CLONED",
   "FRESH_AGENT_INJECTED",
+  "KNOWLEDGE_CREATED",
+  "CROSS_POLLINATION_CREATED",
+  "CRITIC_STARTED",
+  "CRITIC_COMPLETED",
+  "CANDIDATE_STATUS_CHANGED",
+  "VERIFICATION_STARTED",
+  "VERIFICATION_PASSED",
+  "VERIFICATION_FAILED",
+  "VERIFICATION_INCONCLUSIVE",
+  "ROUTING_DECISION",
   "GENERATION_ADVANCED",
   "RUN_COMPLETED",
   "RUN_FAILED",
@@ -41,22 +60,50 @@ const pct = (value: number) => Math.round(value * 100);
 const humanize = (value: string) => value.replaceAll("_", " ").toLowerCase();
 
 export default function Home() {
+  const [projectName, setProjectName] = useState("Research project");
+  const [projects, setProjects] = useState<Project[]>([]);
   const [title, setTitle] = useState("Research problem");
   const [prompt, setPrompt] = useState("");
   const [maxGenerations, setMaxGenerations] = useState(3);
-  const [populationSize, setPopulationSize] = useState(4);
-  const [survivorCount, setSurvivorCount] = useState(2);
+  const [populationSize, setPopulationSize] = useState(6);
+  const [survivorCount, setSurvivorCount] = useState(3);
   const [freshAgentCount, setFreshAgentCount] = useState(1);
   const [redundancyThreshold, setRedundancyThreshold] = useState(0.78);
+  const [criticCount, setCriticCount] = useState(1);
+  const [verificationEnabled, setVerificationEnabled] = useState(true);
   const [runId, setRunId] = useState<string | null>(null);
   const [run, setRun] = useState<RunDetail | null>(null);
+  const [metrics, setMetrics] = useState<RunMetrics | null>(null);
+  const [models, setModels] = useState<ModelState[]>([]);
   const [events, setEvents] = useState<RunEvent[]>([]);
+  const [manualKind, setManualKind] = useState<KnowledgeKind>("HYPOTHESIS");
+  const [manualKnowledge, setManualKnowledge] = useState("");
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const refreshStatic = useCallback(async () => {
+    try {
+      const [projectList, modelStates] = await Promise.all([
+        listProjects(),
+        getModelStates(),
+      ]);
+      setProjects(projectList);
+      setModels(modelStates);
+    } catch {
+      // The run surface still works if these dashboard calls are temporarily unavailable.
+    }
+  }, []);
+
   const refreshRun = useCallback(async (id: string) => {
     try {
-      setRun(await getRun(id));
+      const [detail, runMetrics, modelStates] = await Promise.all([
+        getRun(id),
+        getRunMetrics(id),
+        getModelStates(),
+      ]);
+      setRun(detail);
+      setMetrics(runMetrics);
+      setModels(modelStates);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not refresh run.");
@@ -64,8 +111,11 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (!runId) return;
+    void refreshStatic();
+  }, [refreshStatic]);
 
+  useEffect(() => {
+    if (!runId) return;
     void refreshRun(runId);
     const timer = window.setInterval(() => void refreshRun(runId), 2000);
     const source = new EventSource(`${API_BASE_URL}/runs/${runId}/events`);
@@ -80,14 +130,13 @@ export default function Home() {
         );
         void refreshRun(runId);
       } catch {
-        // Polling remains the fallback if a malformed event arrives.
+        // Polling remains the fallback if SSE parsing fails.
       }
     };
 
     for (const eventType of EVENT_TYPES) {
       source.addEventListener(eventType, onEvent as EventListener);
     }
-
     return () => {
       window.clearInterval(timer);
       source.close();
@@ -96,28 +145,23 @@ export default function Home() {
 
   async function start(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!prompt.trim()) {
-      setError("Enter a research problem first.");
-      return;
-    }
+    if (!prompt.trim()) return setError("Enter a research problem first.");
     if (survivorCount >= populationSize) {
-      setError("Survivors must be fewer than the population.");
-      return;
+      return setError("Survivors must be fewer than the population.");
     }
     if (freshAgentCount >= populationSize) {
-      setError("Fresh explorers must be fewer than the population.");
-      return;
+      return setError("Fresh explorers must be fewer than the population.");
     }
 
     setStarting(true);
     setError(null);
-    setRun(null);
     setEvents([]);
-
     try {
+      const project = await createProject(projectName.trim() || "Research project");
       const problem = await createProblem(
         title.trim() || "Research problem",
         prompt.trim(),
+        project.id,
       );
       const created = await createRun(problem.id, {
         maxGenerations,
@@ -125,9 +169,11 @@ export default function Home() {
         survivorCount,
         freshAgentCount,
         redundancyThreshold,
+        criticCount,
+        verificationEnabled,
       });
       setRunId(created.id);
-      await refreshRun(created.id);
+      await Promise.all([refreshRun(created.id), refreshStatic()]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not start run.");
     } finally {
@@ -135,11 +181,34 @@ export default function Home() {
     }
   }
 
+  async function addKnowledge(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!runId || !manualKnowledge.trim()) return;
+    try {
+      await injectKnowledge(runId, {
+        kind: manualKind,
+        content: manualKnowledge.trim(),
+      });
+      setManualKnowledge("");
+      await refreshRun(runId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not inject knowledge.");
+    }
+  }
+
   const generation = run?.generations.at(-1) ?? null;
+  const allKnowledge = run?.generations.flatMap((item) => item.knowledge) ?? [];
+  const allPackets = run?.generations.flatMap((item) => item.cross_pollination) ?? [];
+  const allCandidates = run?.generations.flatMap((item) => item.candidate_states) ?? [];
+  const allFindings = run?.generations.flatMap((item) => item.critic_findings) ?? [];
+  const allVerifications = run?.generations.flatMap((item) => item.verifications) ?? [];
+  const contradictions = allKnowledge.filter((item) => item.kind === "CONTRADICTION");
   const researchers =
     generation?.agents.filter((agent) => agent.role.startsWith("researcher:")) ?? [];
   const judges =
     generation?.agents.filter((agent) => agent.role.startsWith("judge:")) ?? [];
+  const critics =
+    generation?.agents.filter((agent) => agent.role.startsWith("critic:")) ?? [];
   const lineageByAgent = useMemo(() => {
     const map = new Map<string, Lineage>();
     for (const lineage of generation?.lineages ?? []) {
@@ -148,285 +217,264 @@ export default function Home() {
     return map;
   }, [generation]);
 
-  const counts = useMemo(() => {
-    const agents = generation?.agents ?? [];
-    return {
-      running: agents.filter((agent) => agent.status === "RUNNING").length,
-      fresh: agents.filter((agent) => agent.origin === "FRESH").length,
-      niches: new Set(
-        agents
-          .filter((agent) => agent.role.startsWith("researcher:"))
-          .map((agent) => agent.niche),
-      ).size,
-    };
-  }, [generation]);
-
   return (
     <main className="shell">
       <header className="hero">
         <div>
           <p className="eyebrow">Agent Coordination</p>
-          <h1>Diversity-preserving tournament</h1>
+          <h1>Research control room</h1>
           <p className="lede">
-            Compete, select, and evolve research branches while protecting novel
-            approaches from premature convergence with niches, redundancy detection,
-            wildcard survival, and fresh blind explorers.
+            One surface for projects, populations, lineages, knowledge, adversarial
+            critique, verification, model routing, budgets, and the complete audit trail.
           </p>
         </div>
-        <div className="systemBadge"><span className="pulse" />Phase 3</div>
+        <div className="systemBadge"><span className="pulse" />Phase 9</div>
       </header>
 
-      <section className="grid topGrid">
+      <nav className="controlNav">
+        {["overview","population","research","knowledge","candidates","verification","models","events"].map((item) => (
+          <a key={item} href={`#${item}`}>{item}</a>
+        ))}
+      </nav>
+
+      <section id="overview" className="grid topGrid">
         <form className="panel" onSubmit={start}>
           <div className="panelHeading">
-            <div><p className="kicker">New tournament</p><h2>Research problem</h2></div>
+            <div><p className="kicker">Launch</p><h2>New research run</h2></div>
           </div>
-
+          <label>Project<input value={projectName} onChange={(e) => setProjectName(e.target.value)} /></label>
+          <label>Problem title<input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
           <label>
-            Title
-            <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={300} />
+            Research problem
+            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={7} />
           </label>
-
-          <label>
-            Problem
-            <textarea
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Describe the research problem..."
-              rows={8}
-            />
-          </label>
-
           <div className="configGrid">
+            <NumberField label="Generations" value={maxGenerations} min={1} max={20} onChange={setMaxGenerations} />
+            <NumberField label="Population" value={populationSize} min={2} max={12} onChange={setPopulationSize} />
+            <NumberField label="Survivors" value={survivorCount} min={1} max={11} onChange={setSurvivorCount} />
+            <NumberField label="Fresh" value={freshAgentCount} min={0} max={11} onChange={setFreshAgentCount} />
+            <NumberField label="Critics" value={criticCount} min={0} max={4} onChange={setCriticCount} />
             <label>
-              Generations
-              <input
-                type="number"
-                min={1}
-                max={20}
-                value={maxGenerations}
-                onChange={(e) => setMaxGenerations(Number(e.target.value))}
-              />
-            </label>
-            <label>
-              Population
-              <input
-                type="number"
-                min={2}
-                max={12}
-                value={populationSize}
-                onChange={(e) => setPopulationSize(Number(e.target.value))}
-              />
-            </label>
-            <label>
-              Survivors
-              <input
-                type="number"
-                min={1}
-                max={11}
-                value={survivorCount}
-                onChange={(e) => setSurvivorCount(Number(e.target.value))}
-              />
-            </label>
-            <label>
-              Fresh / generation
-              <input
-                type="number"
-                min={0}
-                max={11}
-                value={freshAgentCount}
-                onChange={(e) => setFreshAgentCount(Number(e.target.value))}
-              />
-            </label>
-            <label>
-              Redundancy threshold
-              <input
-                type="number"
-                min={0}
-                max={1}
-                step={0.01}
-                value={redundancyThreshold}
-                onChange={(e) => setRedundancyThreshold(Number(e.target.value))}
-              />
+              Redundancy
+              <input type="number" min={0} max={1} step={0.01} value={redundancyThreshold}
+                onChange={(e) => setRedundancyThreshold(Number(e.target.value))} />
             </label>
           </div>
-
-          <button type="submit" disabled={starting}>
-            {starting ? "Starting…" : "Start tournament"}
-          </button>
+          <label className="checkRow">
+            <input type="checkbox" checked={verificationEnabled}
+              onChange={(e) => setVerificationEnabled(e.target.checked)} />
+            Verify final candidate
+          </label>
+          <button type="submit" disabled={starting}>{starting ? "Starting…" : "Start run"}</button>
           {error ? <p className="error">{error}</p> : null}
+          <div className="chips">
+            {projects.slice(-6).map((project) => <span key={project.id}>{project.name}</span>)}
+          </div>
         </form>
 
         <section className="panel">
           <div className="panelHeading">
-            <div>
-              <p className="kicker">Live state</p>
-              <h2>{run ? run.problem.title : "No active run"}</h2>
-            </div>
+            <div><p className="kicker">Overview</p><h2>{run?.problem.title ?? "No active run"}</h2></div>
             {run ? <span className={`status status-${run.status}`}>{run.status}</span> : null}
           </div>
-
           {run ? (
             <>
               <p className="problemText">{run.problem.prompt}</p>
               <div className="metricGrid">
-                <Metric
-                  label="Generation"
-                  value={(generation?.index ?? 0) + 1}
-                  suffix={`/${run.max_generations}`}
-                />
-                <Metric label="Population" value={run.population_size} />
-                <Metric label="Survivors" value={run.survivor_count} />
-                <Metric label="Fresh" value={counts.fresh} />
-                <Metric label="Niches" value={counts.niches} />
-                <Metric
-                  label="Redundancy"
-                  value={Math.round(run.redundancy_threshold * 100)}
-                  suffix="%"
-                />
+                <Metric label="Generation" value={(generation?.index ?? 0) + 1} suffix={`/${run.max_generations}`} />
+                <Metric label="Model calls" value={metrics?.model_calls ?? 0} />
+                <Metric label="Knowledge" value={metrics?.knowledge_items ?? 0} />
+                <Metric label="Verifications" value={metrics?.verifications ?? 0} />
+                <Metric label="Verified" value={metrics?.verified_candidates ?? 0} />
+                <Metric label="Niches" value={metrics?.active_niches ?? 0} />
+              </div>
+              <div className="chips">
+                <span>{metrics?.input_tokens ?? 0} input tok</span>
+                <span>{metrics?.output_tokens ?? 0} output tok</span>
+                <span>€{(metrics?.estimated_cost ?? 0).toFixed(4)} est.</span>
+                <span>judge Δ {(metrics?.judge_disagreement ?? 0).toFixed(3)}</span>
               </div>
               <p className="runId">Run <code>{run.id}</code></p>
             </>
-          ) : (
-            <div className="emptyState">
-              <div>
-                <p>A tournament will appear here when started.</p>
-                <span>niches → judge → diversity selection → clone + fresh explorers</span>
-              </div>
-            </div>
-          )}
+          ) : <div className="emptyState">Start a run to populate the control room.</div>}
         </section>
       </section>
 
       {run && generation ? (
         <>
-          <section className="panel generationStrip">
-            <div>
-              <p className="kicker">Tournament progress</p>
-              <h2>Generations</h2>
-            </div>
-            <div className="generationPills">
-              {run.generations.map((item) => (
-                <span
-                  key={item.id}
-                  className={item.id === generation.id ? "generationPill active" : "generationPill"}
-                >
-                  G{item.index + 1}
-                  <small>{item.submissions.length}/{run.population_size}</small>
-                </span>
-              ))}
-            </div>
-          </section>
-
-          <section className="grid halfGrid">
-            <AgentPanel
-              title="Researchers"
-              kicker={`Generation ${generation.index + 1}`}
-              agents={researchers}
-              lineageByAgent={lineageByAgent}
-              empty="Researchers spawn when the generation starts."
-            />
-            <AgentPanel
-              title="Blind judges"
-              kicker="Evaluation"
-              agents={judges}
-              lineageByAgent={new Map()}
-              empty="Judges spawn after all research branches finish."
-            />
-          </section>
-
-          <section className="panel">
+          <section id="population" className="panel">
             <div className="panelHeading">
-              <div><p className="kicker">Research artifacts</p><h2>Current submissions</h2></div>
+              <div><p className="kicker">Population</p><h2>Generation {generation.index + 1}</h2></div>
+              <span className="count">{generation.agents.length}</span>
+            </div>
+            <div className="tripleGrid">
+              <AgentPanel title="Researchers" agents={researchers} lineageByAgent={lineageByAgent} />
+              <AgentPanel title="Blind judges" agents={judges} lineageByAgent={new Map()} />
+              <AgentPanel title="Critics" agents={critics} lineageByAgent={new Map()} />
+            </div>
+          </section>
+
+          <section id="research" className="panel">
+            <div className="panelHeading">
+              <div><p className="kicker">Research</p><h2>Submissions, selection & transfer</h2></div>
               <span className="count">{generation.submissions.length}</span>
             </div>
-            {generation.submissions.length ? (
-              <div className="submissionGrid">
-                {generation.submissions.map((submission, index) => {
-                  const agent = generation.agents.find((item) => item.id === submission.agent_id);
-                  return (
-                    <article className="card" key={submission.id}>
-                      <div className="cardTopline">
-                        <span>Candidate {index + 1}</span>
-                        <code>{shortId(submission.agent_id)}</code>
-                      </div>
-                      {agent ? (
-                        <div className="chips">
-                          <span>{humanize(agent.niche)}</span>
-                          <span>{humanize(agent.origin)}</span>
-                        </div>
-                      ) : null}
-                      <h3>{submission.summary}</h3>
-                      <p>{submission.approach}</p>
-                      {submission.final_answer ? (
-                        <div className="answer">
-                          <span>Final candidate</span>
-                          <p>{submission.final_answer}</p>
-                        </div>
-                      ) : null}
-                    </article>
-                  );
-                })}
-              </div>
-            ) : <p className="muted">Structured submissions appear as researchers finish.</p>}
-          </section>
-
-          <section className="panel">
-            <div className="panelHeading">
-              <div><p className="kicker">Evolution</p><h2>Selection & diversity history</h2></div>
-              <span className="count">{run.generations.length}</span>
+            <div className="submissionGrid">
+              {generation.submissions.map((submission) => (
+                <article className="card" key={submission.id}>
+                  <div className="cardTopline"><span>{shortId(submission.id)}</span><code>{shortId(submission.agent_id)}</code></div>
+                  <h3>{submission.summary}</h3>
+                  <p>{submission.approach}</p>
+                  <div className="chips">
+                    <span>{submission.claims.length} claims</span>
+                    <span>{submission.discoveries.length} discoveries</span>
+                    <span>{submission.failed_attempts.length} failed</span>
+                  </div>
+                </article>
+              ))}
             </div>
             <div className="evolutionGrid">
-              {run.generations.map((item) => (
-                <GenerationHistory key={item.id} generation={item} />
+              {run.generations.map((item) => <GenerationHistory key={item.id} generation={item} />)}
+            </div>
+            <div className="stack compactStack">
+              {allPackets.map((packet) => (
+                <article className="agentRow" key={packet.id}>
+                  <div><strong>{humanize(packet.kind)}</strong><code>{shortId(packet.source_submission_id)} → {shortId(packet.target_agent_id)}</code></div>
+                </article>
               ))}
             </div>
           </section>
 
-          <section className="grid halfGrid">
+          <section id="knowledge" className="grid halfGrid">
+            <section className="panel">
+              <div className="panelHeading">
+                <div><p className="kicker">Knowledge</p><h2>Durable research memory</h2></div>
+                <span className="count">{allKnowledge.length}</span>
+              </div>
+              <form onSubmit={addKnowledge} className="manualForm">
+                <select value={manualKind} onChange={(e) => setManualKind(e.target.value as KnowledgeKind)}>
+                  {["HYPOTHESIS","CANDIDATE_LEMMA","COUNTEREXAMPLE","CONTRADICTION","PROMISING_APPROACH","UNRESOLVED_QUESTION"].map((kind) => (
+                    <option key={kind} value={kind}>{humanize(kind)}</option>
+                  ))}
+                </select>
+                <input value={manualKnowledge} onChange={(e) => setManualKnowledge(e.target.value)}
+                  placeholder="Inject a durable research note…" />
+                <button type="submit">Inject</button>
+              </form>
+              <div className="stack scrollStack">
+                {[...allKnowledge].reverse().slice(0, 30).map((item) => (
+                  <article className="card" key={item.id}>
+                    <div className="cardTopline"><span>{humanize(item.kind)}</span><span>{humanize(item.status)}</span></div>
+                    <p>{item.content}</p>
+                  </article>
+                ))}
+              </div>
+            </section>
+            <section className="panel">
+              <div className="panelHeading">
+                <div><p className="kicker">Contradictions</p><h2>Conflict watch</h2></div>
+                <span className="count">{contradictions.length}</span>
+              </div>
+              {contradictions.length ? contradictions.map((item) => (
+                <article className="card" key={item.id}><p>{item.content}</p></article>
+              )) : <p className="muted">No explicit contradictions recorded yet.</p>}
+            </section>
+          </section>
+
+          <section id="candidates" className="grid halfGrid">
+            <section className="panel">
+              <div className="panelHeading">
+                <div><p className="kicker">Candidates</p><h2>Lifecycle</h2></div>
+                <span className="count">{allCandidates.length}</span>
+              </div>
+              <div className="stack">
+                {allCandidates.map((state) => (
+                  <article className="agentRow" key={state.id}>
+                    <div><strong>{shortId(state.submission_id)}</strong><code>{state.id}</code></div>
+                    <span className={`status status-${state.status}`}>{state.status}</span>
+                  </article>
+                ))}
+              </div>
+            </section>
+            <section className="panel">
+              <div className="panelHeading">
+                <div><p className="kicker">Adversarial review</p><h2>Critic findings</h2></div>
+                <span className="count">{allFindings.length}</span>
+              </div>
+              <div className="stack">
+                {allFindings.map((finding) => (
+                  <article className="card" key={finding.id}>
+                    <div className="cardTopline">
+                      <span>{finding.fatal_error ? "fatal" : "survived"}</span>
+                      <span>{pct(finding.confidence)}% confidence</span>
+                    </div>
+                    <p>{finding.critique}</p>
+                    {finding.counterexample ? <div className="answer"><span>Counterexample</span><p>{finding.counterexample}</p></div> : null}
+                  </article>
+                ))}
+              </div>
+            </section>
+          </section>
+
+          <section id="verification" className="panel">
+            <div className="panelHeading">
+              <div><p className="kicker">Verification</p><h2>Deterministic checks</h2></div>
+              <span className="count">{allVerifications.length}</span>
+            </div>
+            <div className="tripleGrid">
+              {allVerifications.map((result) => (
+                <article className="card" key={result.id}>
+                  <div className="cardTopline"><span>{humanize(result.kind)}</span><span>{result.status}</span></div>
+                  <p>{result.detail}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section id="models" className="panel">
+            <div className="panelHeading">
+              <div><p className="kicker">Models & budgets</p><h2>Adaptive routing state</h2></div>
+              <span className="count">{models.length}</span>
+            </div>
+            <div className="modelGrid">
+              {models.map((model) => <ModelCard key={model.id} model={model} />)}
+            </div>
+          </section>
+
+          <section id="events" className="grid halfGrid">
             <section className="panel">
               <div className="panelHeading">
                 <div><p className="kicker">Scoring</p><h2>Current evaluations</h2></div>
                 <span className="count">{generation.evaluations.length}</span>
               </div>
               <div className="stack">
-                {generation.evaluations.length ? generation.evaluations.map((evaluation) => (
+                {generation.evaluations.map((evaluation) => (
                   <article className="card" key={evaluation.id}>
-                    <div className="cardTopline">
-                      <span>Submission {shortId(evaluation.submission_id)}</span>
-                      <span>{evaluation.fatal_error ? "Fatal error" : "No fatal error"}</span>
-                    </div>
+                    <div className="cardTopline"><span>{shortId(evaluation.submission_id)}</span><span>{evaluation.fatal_error ? "fatal" : "clean"}</span></div>
                     <div className="scoreGrid">
                       <Score label="Correct" value={evaluation.correctness} />
                       <Score label="Rigor" value={evaluation.rigor} />
                       <Score label="Novelty" value={evaluation.novelty} />
                       <Score label="Progress" value={evaluation.research_progress} />
-                      <Score label="Verifiable" value={evaluation.verifiability} />
+                      <Score label="Verify" value={evaluation.verifiability} />
                       <Score label="Confidence" value={evaluation.judge_confidence} />
                     </div>
-                    <p>{evaluation.critique}</p>
                   </article>
-                )) : <p className="muted">Blind evaluations appear during judging.</p>}
+                ))}
               </div>
             </section>
-
             <section className="panel timelinePanel">
               <div className="panelHeading">
                 <div><p className="kicker">Audit trail</p><h2>Run events</h2></div>
                 <span className="count">{events.length}</span>
               </div>
               <div className="timeline">
-                {events.length ? [...events].reverse().map((event) => (
+                {[...events].reverse().map((event) => (
                   <article className="timelineItem" key={event.id}>
                     <span className="eventDot" />
-                    <div>
-                      <strong>{event.type.replaceAll("_", " ")}</strong>
-                      <span>
-                        {event.created_at ? new Date(event.created_at).toLocaleTimeString() : "now"}
-                      </span>
-                    </div>
+                    <div><strong>{event.type.replaceAll("_", " ")}</strong><span>{event.created_at ? new Date(event.created_at).toLocaleTimeString() : "now"}</span></div>
                   </article>
-                )) : <p className="muted">Waiting for run events…</p>}
+                ))}
               </div>
             </section>
           </section>
@@ -436,15 +484,13 @@ export default function Home() {
   );
 }
 
-function Metric({
-  label,
-  value,
-  suffix = "",
-}: {
-  label: string;
-  value: number;
-  suffix?: string;
+function NumberField({ label, value, min, max, onChange }: {
+  label: string; value: number; min: number; max: number; onChange: (value: number) => void;
 }) {
+  return <label>{label}<input type="number" min={min} max={max} value={value} onChange={(e) => onChange(Number(e.target.value))} /></label>;
+}
+
+function Metric({ label, value, suffix = "" }: { label: string; value: number; suffix?: string }) {
   return <div className="metric"><span>{label}</span><strong>{value}{suffix}</strong></div>;
 }
 
@@ -452,97 +498,70 @@ function Score({ label, value }: { label: string; value: number }) {
   return <span>{label}<strong>{pct(value)}</strong></span>;
 }
 
-function AgentPanel({
-  title,
-  kicker,
-  agents,
-  lineageByAgent,
-  empty,
-}: {
-  title: string;
-  kicker: string;
-  agents: Agent[];
-  lineageByAgent: Map<string, Lineage>;
-  empty: string;
+function AgentPanel({ title, agents, lineageByAgent }: {
+  title: string; agents: Agent[]; lineageByAgent: Map<string, Lineage>;
 }) {
   return (
-    <section className="panel">
-      <div className="panelHeading">
-        <div><p className="kicker">{kicker}</p><h2>{title}</h2></div>
-        <span className="count">{agents.length}</span>
+    <section>
+      <h3 className="subhead">{title}</h3>
+      <div className="stack">
+        {agents.map((agent) => {
+          const lineage = lineageByAgent.get(agent.id);
+          return (
+            <article className="agentRow" key={agent.id}>
+              <div>
+                <strong>{agent.role}</strong>
+                <code>{shortId(agent.id)}</code>
+                <span className="lineageLabel">{humanize(agent.niche)} · {humanize(agent.origin)}</span>
+                {lineage ? <span className="lineageLabel">{humanize(lineage.mutation_type)} ← {shortId(lineage.parent_submission_id)}</span> : null}
+              </div>
+              <span className={`status status-${agent.status}`}>{agent.status}</span>
+            </article>
+          );
+        })}
+        {!agents.length ? <p className="muted">None yet.</p> : null}
       </div>
-      {agents.length ? (
-        <div className="stack">
-          {agents.map((agent) => {
-            const lineage = lineageByAgent.get(agent.id);
-            return (
-              <article className="agentRow" key={agent.id}>
-                <div>
-                  <strong>{agent.role}</strong>
-                  <code>{shortId(agent.id)}</code>
-                  <span className="lineageLabel">
-                    {humanize(agent.niche)} · {humanize(agent.origin)}
-                  </span>
-                  {lineage ? (
-                    <span className="lineageLabel">
-                      {humanize(lineage.mutation_type)} from {shortId(lineage.parent_submission_id)}
-                    </span>
-                  ) : null}
-                </div>
-                <span className={`status status-${agent.status}`}>{agent.status}</span>
-              </article>
-            );
-          })}
-        </div>
-      ) : <p className="muted">{empty}</p>}
     </section>
   );
 }
 
 function GenerationHistory({ generation }: { generation: Generation }) {
-  const selected = generation.selections.filter((item) => item.selected);
-  const redundant = generation.selections.filter(
-    (item) => item.redundant_with_submission_id !== null,
-  );
-
   return (
     <article className="generationHistory">
-      <div className="cardTopline">
-        <strong>Generation {generation.index + 1}</strong>
-        <span>{generation.submissions.length} submissions</span>
+      <div className="cardTopline"><strong>G{generation.index + 1}</strong><span>{generation.submissions.length} submissions</span></div>
+      <div className="selectionList">
+        {generation.selections.map((decision) => (
+          <span key={decision.id}
+            className={decision.selected ? "selection selected" : "selection eliminated"}
+            title={decision.reason}>
+            #{decision.rank} {humanize(decision.selection_kind)} · n{pct(decision.novelty_score)}
+          </span>
+        ))}
       </div>
-      {generation.selections.length ? (
-        <>
-          <p>
-            <b>{selected.length}</b> selected · <b>{redundant.length}</b> redundant
-          </p>
-          <div className="selectionList">
-            {generation.selections.map((decision) => (
-              <span
-                key={decision.id}
-                className={decision.selected ? "selection selected" : "selection eliminated"}
-                title={decision.reason}
-              >
-                #{decision.rank} {humanize(decision.selection_kind)} · novelty {pct(decision.novelty_score)}
-                {decision.redundant_with_submission_id
-                  ? ` ↔ ${shortId(decision.redundant_with_submission_id)}`
-                  : ""}
-              </span>
-            ))}
-          </div>
-        </>
-      ) : (
-        <p className="muted">Selection pending or final generation.</p>
-      )}
-      {generation.lineages.length ? (
-        <div className="chips">
-          {generation.lineages.map((lineage) => (
-            <span key={lineage.id}>
-              {humanize(lineage.mutation_type)} ← {shortId(lineage.parent_submission_id)}
-            </span>
-          ))}
-        </div>
-      ) : null}
+      <div className="chips">
+        {generation.lineages.map((lineage) => (
+          <span key={lineage.id}>{humanize(lineage.mutation_type)} ← {shortId(lineage.parent_submission_id)}</span>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function ModelCard({ model }: { model: ModelState }) {
+  return (
+    <article className="card">
+      <div className="cardTopline"><span>{model.enabled ? "enabled" : "disabled"}</span><code>{shortId(model.model_profile_id)}</code></div>
+      <div className="scoreGrid">
+        <Score label="Reliability" value={1 - model.failure_rate} />
+        <Score label="Rate pressure" value={model.rate_limit_pressure} />
+        <Score label="Scarcity" value={model.scarcity} />
+      </div>
+      <div className="chips">
+        <span>{Math.round(model.latency_ms)}ms</span>
+        <span>{model.available_concurrency} concurrency</span>
+        <span>cash {model.marginal_cash_cost.toFixed(3)}</span>
+        <span>credit {model.credit_cost.toFixed(3)}</span>
+      </div>
     </article>
   );
 }
