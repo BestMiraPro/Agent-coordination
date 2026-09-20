@@ -253,14 +253,14 @@ class TournamentOrchestrator:
             if run is None:
                 raise KeyError(f"Run not found: {run_id}")
             generation = self._resolve_generation(uow, run_id, generation_id)
+            if run.status in {RunStatus.COMPLETED, RunStatus.FAILED}:
+                return
             latest = self._latest_generation(uow, run_id)
 
             if latest is not None and latest.index > generation.index:
                 researchers = self._researchers(uow, latest.id)
                 enqueue = (latest, researchers)
                 uow.commit()
-            elif run.status == RunStatus.COMPLETED:
-                return
             else:
                 judges = self._judges(uow, generation.id)
                 if (

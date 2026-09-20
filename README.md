@@ -2,18 +2,25 @@
 
 A research-oriented multi-agent coordination system designed to maximize verified research progress per unit of time and compute budget.
 
-Phase 1 is a working vertical slice:
+The current implementation includes the complete Phase 1 vertical slice and
+Phase 2 autonomous tournament mechanics:
 
 ```text
 problem
- -> 4 independent researchers
- -> structured submissions
- -> 2 blind judges
- -> 8 multidimensional evaluations
- -> completed run
+ -> Generation 0 independent researchers
+ -> blind multidimensional judging
+ -> vector-aware selection
+ -> elimination
+ -> clone surviving ideas
+ -> mutate children
+ -> persist lineage
+ -> next generation
+ -> ... until configured generation limit
 ```
 
-The orchestration state machine, durable PostgreSQL queue, API, worker, model-provider boundary, and web control room are implemented. The runtime defaults to a deterministic fake provider so the whole stack can run without credentials.
+The orchestration state machine, durable PostgreSQL queue, API, worker,
+provider boundary, evolutionary policy, lineage persistence, and web control
+room are implemented.
 
 ## Run the complete local stack
 
@@ -21,13 +28,29 @@ The orchestration state machine, durable PostgreSQL queue, API, worker, model-pr
 docker compose up --build
 ```
 
-Then open the web control room at `http://localhost:3000`.
+Then open the research tournament control room at `http://localhost:3000`.
+The API is exposed at `http://localhost:8000`.
 
-The API is exposed at `http://localhost:8000`. PostgreSQL is exposed at `localhost:5432`.
+The default worker uses a deterministic fake provider, so a complete
+multi-generation tournament can run without credentials.
+
+## Tournament defaults
+
+Runs created from the API/control room default to:
+
+```text
+generations: 3
+population:  4
+survivors:   2
+judges:      2 per generation
+```
+
+Selection is based on the full evaluation vector rather than a single scalar.
+Survivors are cloned with `STRENGTHEN`, `FALSIFY`, `REDERIVE`, and
+`GENERALIZE` mutation objectives. Selection decisions and parent-child
+lineage are durable and inspectable.
 
 ## Use W&B Inference
-
-The first real provider is W&B Inference through its OpenAI-compatible chat-completions endpoint.
 
 Create a local `.env` from `.env.example`, then set:
 
@@ -39,15 +62,9 @@ INFERENCE_BASE_URL=https://api.inference.wandb.ai/v1
 INFERENCE_PROJECT=<optional team/project>
 ```
 
-You can replace `INFERENCE_MODEL` with another model available to your W&B account without changing orchestration code.
-
-Then start the stack normally:
-
-```bash
-docker compose up --build
-```
-
-No API key is stored in the repository or model-call metadata.
+The model can be replaced with another model available to your W&B account
+without changing tournament code. No API key is persisted in the database or
+repository.
 
 ## Development without Docker
 
@@ -80,7 +97,8 @@ ruff check .
 cd apps/web && npm run build
 ```
 
-CI runs PostgreSQL migrations, backend/integration tests, and a production Next.js build.
+CI runs PostgreSQL migrations, backend/unit/integration tests, provider
+contracts, Docker Compose validation, and a production Next.js build.
 
 ## Architectural principles
 
@@ -88,9 +106,10 @@ CI runs PostgreSQL migrations, backend/integration tests, and a production Next.
 - Agents are disposable; useful research artifacts are durable.
 - Provider-specific logic never leaks into the core domain.
 - Every model call is attributable, measurable, and retry-safe.
-- Judges do not see model identity.
+- Judges do not see model identity or lineage.
+- Selection does not rely on one scalar fitness score.
 - Convergence is not correctness; verification matters more than consensus.
 - Infrastructure is added only when measurements justify it.
 
-See `docs/architecture.md`, `docs/master-plan.md`, and
-`docs/phase-1-implementation-contract.md`.
+See `docs/architecture.md`, `docs/master-plan.md`,
+`docs/phase-1-implementation-contract.md`, and `docs/phase-2.md`.
