@@ -95,6 +95,18 @@ class CandidateLifecycle(StrEnum):
     REFUTED = "REFUTED"
 
 
+class VerificationKind(StrEnum):
+    STRUCTURED_EVIDENCE = "STRUCTURED_EVIDENCE"
+    PYTHON_COMPILE = "PYTHON_COMPILE"
+    ADVERSARIAL_CHECK = "ADVERSARIAL_CHECK"
+
+
+class VerificationStatus(StrEnum):
+    PASSED = "PASSED"
+    FAILED = "FAILED"
+    INCONCLUSIVE = "INCONCLUSIVE"
+
+
 class JobType(StrEnum):
     CREATE_GENERATION = "create_generation"
     RUN_RESEARCH_AGENT = "run_research_agent"
@@ -143,6 +155,10 @@ class RunEventType(StrEnum):
     CRITIC_STARTED = "CRITIC_STARTED"
     CRITIC_COMPLETED = "CRITIC_COMPLETED"
     CANDIDATE_STATUS_CHANGED = "CANDIDATE_STATUS_CHANGED"
+    VERIFICATION_STARTED = "VERIFICATION_STARTED"
+    VERIFICATION_PASSED = "VERIFICATION_PASSED"
+    VERIFICATION_FAILED = "VERIFICATION_FAILED"
+    VERIFICATION_INCONCLUSIVE = "VERIFICATION_INCONCLUSIVE"
     GENERATION_ADVANCED = "GENERATION_ADVANCED"
     RUN_COMPLETED = "RUN_COMPLETED"
     RUN_FAILED = "RUN_FAILED"
@@ -165,6 +181,7 @@ class Run:
     fresh_agent_count: int = 0
     redundancy_threshold: float = 0.78
     critic_count: int = 0
+    verification_enabled: bool = False
     id: UUID = field(default_factory=uuid4)
 
 
@@ -285,6 +302,18 @@ class CriticFinding:
     confidence: float
     critique: str
     counterexample: str | None = None
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass(slots=True)
+class VerificationResult:
+    run_id: UUID
+    generation_id: UUID
+    submission_id: UUID
+    kind: VerificationKind
+    status: VerificationStatus
+    detail: str
+    metadata: dict[str, Any] = field(default_factory=dict)
     id: UUID = field(default_factory=uuid4)
 
 

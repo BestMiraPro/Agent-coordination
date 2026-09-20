@@ -33,6 +33,7 @@ from packages.core.domain.models import (
     ResearchNiche,
     RunStatus,
     SelectionKind,
+    VerificationStatus,
 )
 
 
@@ -84,6 +85,7 @@ class RunRecord(TimestampMixin, Base):
     fresh_agent_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
     redundancy_threshold: Mapped[float] = mapped_column(Float, nullable=False, default=0.78, server_default="0.78")
     critic_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    verification_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default="false")
 
 
 class GenerationRecord(TimestampMixin, Base):
@@ -323,6 +325,38 @@ class CriticFindingRecord(TimestampMixin, Base):
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     critique: Mapped[str] = mapped_column(Text, nullable=False)
     counterexample: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class VerificationResultRecord(TimestampMixin, Base):
+    __tablename__ = "verification_results"
+    __table_args__ = (
+        UniqueConstraint(
+            "submission_id",
+            "kind",
+            name="uq_verification_submission_kind",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    generation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("generations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    submission_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("submissions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=VerificationStatus.INCONCLUSIVE.value,
+        server_default=VerificationStatus.INCONCLUSIVE.value,
+    )
+    detail: Mapped[str] = mapped_column(Text, nullable=False)
+    result_metadata: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
 
 
 class ModelProfileRecord(TimestampMixin, Base):
