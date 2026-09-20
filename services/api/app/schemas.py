@@ -21,17 +21,32 @@ from packages.core.domain.models import (
 )
 
 
+class ProjectCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=300)
+    description: str = ""
+
+
+class ProjectResponse(BaseModel):
+    id: UUID
+    name: str
+    description: str
+
+
 class ProblemCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     title: str = Field(min_length=1, max_length=300)
     prompt: str = Field(min_length=1)
+    project_id: UUID | None = None
 
 
 class ProblemResponse(BaseModel):
     id: UUID
     title: str
     prompt: str
+    project_id: UUID | None = None
 
 
 class RunCreate(BaseModel):
@@ -221,3 +236,36 @@ class ModelStateResponse(BaseModel):
     rate_limit_pressure: float
     available_concurrency: int
     enabled: bool
+
+
+class RunSummaryResponse(BaseModel):
+    id: UUID
+    problem_id: UUID
+    status: RunStatus
+    max_generations: int
+    population_size: int
+    survivor_count: int
+    fresh_agent_count: int
+    critic_count: int
+    verification_enabled: bool
+
+
+class RunMetricsResponse(BaseModel):
+    model_calls: int
+    input_tokens: int
+    output_tokens: int
+    estimated_cost: float
+    generations: int
+    knowledge_items: int
+    verifications: int
+    verified_candidates: int
+    active_niches: int
+    judge_disagreement: float
+
+
+class ManualKnowledgeCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: KnowledgeKind
+    content: str = Field(min_length=1)
+    confidence: float | None = Field(default=None, ge=0.0, le=1.0)

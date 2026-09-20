@@ -13,7 +13,9 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from packages.core.domain.models import (
     JobType,
+    KnowledgeItem,
     Problem,
+    Project,
     Run,
     RunEvent,
     RunEventType,
@@ -31,9 +33,13 @@ from services.api.app.schemas import (
     GenerationResponse,
     ProblemCreate,
     ProblemResponse,
+    ProjectCreate,
+    ProjectResponse,
     RunCreate,
     RunCreatedResponse,
     RunDetailResponse,
+    RunMetricsResponse,
+    RunSummaryResponse,
     SelectionResponse,
     LineageResponse,
     KnowledgeResponse,
@@ -78,13 +84,51 @@ def create_app(
         return {"status": "ok"}
 
     @app.post(
+        "/projects",
+        response_model=ProjectResponse,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def create_project(body: ProjectCreate) -> ProjectResponse:
+        project = Project(name=body.name, description=body.description)
+        with uow() as work:
+            work.projects.add(project)
+            work.commit()
+        return ProjectResponse(
+            id=project.id,
+            name=project.name,
+            description=project.description,
+        )
+
+    @app.get("/projects", response_model=list[ProjectResponse])
+    async def list_projects() -> list[ProjectResponse]:
+        with uow() as work:
+            projects = work.projects.list_all()
+        return [
+            ProjectResponse(
+                id=project.id,
+                name=project.name,
+                description=project.description,
+            )
+            for project in projects
+        ]
+
+    @app.post(
         "/problems",
         response_model=ProblemResponse,
         status_code=status.HTTP_201_CREATED,
     )
     async def create_problem(body: ProblemCreate) -> ProblemResponse:
-        problem = Problem(title=body.title, prompt=body.prompt)
+        problem = Problem(
+            title=body.title,
+            prompt=body.prompt,
+            project_id=body.project_id,
+        )
         with uow() as work:
+            if body.project_id is not None and work.projects.get(body.project_id) is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Project not found",
+                )
             work.problems.add(problem)
             work.commit()
 
@@ -92,6 +136,7 @@ def create_app(
             id=problem.id,
             title=problem.title,
             prompt=problem.prompt,
+            project_id=problem.project_id,
         )
 
     @app.post(
@@ -157,6 +202,25 @@ def create_app(
             verification_enabled=run.verification_enabled,
         )
 
+    @app.get("/runs", response_model=list[RunSummaryResponse])
+    async def list_runs() -> list[RunSummaryResponse]:
+        with uow() as work:
+            runs = work.runs.list_all()
+        return [
+            RunSummaryResponse(
+                id=run.id,
+                problem_id=run.problem_id,
+                status=run.status,
+                max_generations=run.max_generations,
+                population_size=run.population_size,
+                survivor_count=run.survivor_count,
+                fresh_agent_count=run.fresh_agent_count,
+                critic_count=run.critic_count,
+                verification_enabled=run.verification_enabled,
+            )
+            for run in runs
+        ]
+
     @app.get("/model-states", response_model=list[ModelStateResponse])
     async def get_model_states() -> list[ModelStateResponse]:
         with uow() as work:
@@ -177,6 +241,117 @@ def create_app(
             )
             for state in states
         ]
+
+    @app.get("/runs/{run_id}/metrics", response_model=RunMetricsResponse)
+    async def get_run_metrics(run_id: UUID) -> RunMetricsResponse:
+        with uow() as work:
+            run = work.runs.get(run_id)
+            if run is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Run not found",
+                )
+            generations = work.generations.list_for_run(run_id)
+            calls = work.model_calls.list_for_run(run_id)
+            knowledge = work.knowledge.list_for_run(run_id)
+            verification_count = 0
+            verified_candidates = 0
+            niches: set[str] = set()
+            correctness_groups: dict[UUID, list[float]] = {}
+            for generation in generations:
+                verification_count += len(
+                    work.verifications.list_for_generation(generation.id)
+                )
+                for state in work.candidate_states.list_for_generation(generation.id):
+                    if state.status.value == "VERIFIED":
+                        verified_candidates += 1
+                for agent in work.agents.list_for_generation(generation.id):
+                    if agent.role.startswith("researcher:"):
+                        niches.add(agent.niche.value)
+                for evaluation in work.evaluations.list_for_generation(generation.id):
+                    correctness_groups.setdefault(
+                        evaluation.submission_id,
+                        [],
+                    ).append(evaluation.correctness)
+
+        disagreements = [
+            pstdev(scores)
+            for scores in correctness_groups.values()
+            if len(scores) > 1
+        ]
+        return RunMetricsResponse(
+            model_calls=len(calls),
+            input_tokens=sum(call.input_tokens or 0 for call in calls),
+            output_tokens=sum(call.output_tokens or 0 for call in calls),
+            estimated_cost=float(sum(call.estimated_cost or 0 for call in calls)),
+            generations=len(generations),
+            knowledge_items=len(knowledge),
+            verifications=verification_count,
+            verified_candidates=verified_candidates,
+            active_niches=len(niches),
+            judge_disagreement=(
+                sum(disagreements) / len(disagreements)
+                if disagreements
+                else 0.0
+            ),
+        )
+
+    @app.post(
+        "/runs/{run_id}/knowledge",
+        response_model=KnowledgeResponse,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def inject_knowledge(
+        run_id: UUID,
+        body: ManualKnowledgeCreate,
+    ) -> KnowledgeResponse:
+        with uow() as work:
+            run = work.runs.get(run_id)
+            if run is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Run not found",
+                )
+            generations = work.generations.list_for_run(run_id)
+            if not generations:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Run has no generation yet",
+                )
+            generation = generations[-1]
+            item = KnowledgeItem(
+                run_id=run_id,
+                generation_id=generation.id,
+                submission_id=None,
+                kind=body.kind,
+                content=body.content,
+                confidence=body.confidence,
+                provenance={"source": "manual_control_room"},
+            )
+            work.knowledge.add_many([item])
+            work.events.append(
+                RunEvent(
+                    run_id=run_id,
+                    event_type=RunEventType.KNOWLEDGE_CREATED.value,
+                    payload={
+                        "knowledge_id": str(item.id),
+                        "generation_id": str(generation.id),
+                        "kind": item.kind.value,
+                        "source": "manual_control_room",
+                    },
+                )
+            )
+            work.commit()
+        return KnowledgeResponse(
+            id=item.id,
+            generation_id=item.generation_id,
+            submission_id=item.submission_id,
+            kind=item.kind,
+            content=item.content,
+            status=item.status,
+            confidence=item.confidence,
+            provenance=item.provenance,
+        )
 
     @app.get("/runs/{run_id}", response_model=RunDetailResponse)
     async def get_run(run_id: UUID) -> RunDetailResponse:
@@ -357,6 +532,7 @@ def create_app(
                 id=problem.id,
                 title=problem.title,
                 prompt=problem.prompt,
+                project_id=problem.project_id,
             ),
             generations=generations,
         )
