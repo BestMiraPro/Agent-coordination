@@ -77,6 +77,14 @@ class KnowledgeStatus(StrEnum):
     REFUTED = "REFUTED"
 
 
+class CrossPollinationKind(StrEnum):
+    VERIFIED = "VERIFIED"
+    PROMISING = "PROMISING"
+    REFUTED = "REFUTED"
+    OPEN = "OPEN"
+    TRY = "TRY"
+
+
 class JobType(StrEnum):
     CREATE_GENERATION = "create_generation"
     RUN_RESEARCH_AGENT = "run_research_agent"
@@ -120,6 +128,7 @@ class RunEventType(StrEnum):
     FRESH_AGENT_INJECTED = "FRESH_AGENT_INJECTED"
     KNOWLEDGE_CREATED = "KNOWLEDGE_CREATED"
     KNOWLEDGE_COMPACTED = "KNOWLEDGE_COMPACTED"
+    CROSS_POLLINATION_CREATED = "CROSS_POLLINATION_CREATED"
     GENERATION_ADVANCED = "GENERATION_ADVANCED"
     RUN_COMPLETED = "RUN_COMPLETED"
     RUN_FAILED = "RUN_FAILED"
@@ -230,6 +239,17 @@ class KnowledgeItem:
     status: KnowledgeStatus = KnowledgeStatus.ACTIVE
     confidence: float | None = None
     provenance: dict[str, Any] = field(default_factory=dict)
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass(slots=True)
+class CrossPollinationPacket:
+    run_id: UUID
+    generation_id: UUID
+    target_agent_id: UUID
+    source_submission_id: UUID
+    kind: CrossPollinationKind
+    payload: dict[str, Any] = field(default_factory=dict)
     id: UUID = field(default_factory=uuid4)
 
 

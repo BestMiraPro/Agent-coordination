@@ -245,6 +245,34 @@ class KnowledgeItemRecord(TimestampMixin, Base):
     )
 
 
+class CrossPollinationPacketRecord(TimestampMixin, Base):
+    __tablename__ = "cross_pollination_packets"
+    __table_args__ = (
+        UniqueConstraint(
+            "target_agent_id",
+            "source_submission_id",
+            name="uq_cross_pollination_target_source",
+        ),
+    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    generation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("generations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    target_agent_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    source_submission_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("submissions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+
+
 class ModelProfileRecord(TimestampMixin, Base):
     __tablename__ = "model_profiles"
     __table_args__ = (UniqueConstraint("provider", "model", name="uq_model_profile_provider_model"),)

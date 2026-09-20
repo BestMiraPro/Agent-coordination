@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from packages.core.domain.models import (
     Agent,
     AgentStatus,
+    CrossPollinationPacket,
     Evaluation,
     Generation,
     KnowledgeItem,
@@ -27,6 +28,7 @@ from packages.core.domain.models import (
 from packages.core.orchestration.state_machine import assert_run_transition
 from packages.persistence.mappers import (
     agent_from_record,
+    cross_pollination_from_record,
     evaluation_from_record,
     generation_from_record,
     knowledge_from_record,
@@ -41,6 +43,7 @@ from packages.persistence.mappers import (
 )
 from packages.persistence.models import (
     AgentRecord,
+    CrossPollinationPacketRecord,
     EvaluationRecord,
     GenerationRecord,
     KnowledgeItemRecord,
@@ -342,6 +345,47 @@ class LineageSqlRepository:
         return [lineage_from_record(record) for record in records]
 
 
+class CrossPollinationSqlRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add_many(
+        self,
+        packets: Iterable[CrossPollinationPacket],
+    ) -> list[CrossPollinationPacket]:
+        records = [
+            CrossPollinationPacketRecord(
+                id=packet.id,
+                run_id=packet.run_id,
+                generation_id=packet.generation_id,
+                target_agent_id=packet.target_agent_id,
+                source_submission_id=packet.source_submission_id,
+                kind=packet.kind.value,
+                payload=packet.payload,
+            )
+            for packet in packets
+        ]
+        self.session.add_all(records)
+        self.session.flush()
+        return [cross_pollination_from_record(record) for record in records]
+
+    def list_for_agent(self, agent_id: UUID) -> list[CrossPollinationPacket]:
+        records = self.session.execute(
+            select(CrossPollinationPacketRecord)
+            .where(CrossPollinationPacketRecord.target_agent_id == agent_id)
+            .order_by(CrossPollinationPacketRecord.created_at, CrossPollinationPacketRecord.id)
+        ).scalars()
+        return [cross_pollination_from_record(record) for record in records]
+
+    def list_for_generation(self, generation_id: UUID) -> list[CrossPollinationPacket]:
+        records = self.session.execute(
+            select(CrossPollinationPacketRecord)
+            .where(CrossPollinationPacketRecord.generation_id == generation_id)
+            .order_by(CrossPollinationPacketRecord.created_at, CrossPollinationPacketRecord.id)
+        ).scalars()
+        return [cross_pollination_from_record(record) for record in records]
+
+
 class KnowledgeSqlRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -490,6 +534,7 @@ class SqlAlchemyUnitOfWork:
         self.evaluations = EvaluationSqlRepository(self.session)
         self.selections = SelectionSqlRepository(self.session)
         self.lineages = LineageSqlRepository(self.session)
+        self.cross_pollination = CrossPollinationSqlRepository(self.session)
         self.knowledge = KnowledgeSqlRepository(self.session)
         self.model_profiles = ModelProfileSqlRepository(self.session)
         self.model_calls = ModelCallSqlRepository(self.session)

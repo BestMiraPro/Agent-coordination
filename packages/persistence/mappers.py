@@ -5,6 +5,8 @@ from packages.core.domain.models import (
     AgentOrigin,
     AgentStatus,
     ClaimDraft,
+    CrossPollinationKind,
+    CrossPollinationPacket,
     Evaluation,
     Generation,
     Job,
@@ -29,6 +31,7 @@ from packages.core.domain.models import (
 )
 from packages.persistence.models import (
     AgentRecord,
+    CrossPollinationPacketRecord,
     EvaluationRecord,
     GenerationRecord,
     JobRecord,
@@ -129,6 +132,20 @@ def lineage_from_record(record: LineageLinkRecord) -> LineageLink:
         child_agent_id=record.child_agent_id,
         parent_submission_id=record.parent_submission_id,
         mutation_type=MutationType(record.mutation_type),
+    )
+
+
+def cross_pollination_from_record(
+    record: CrossPollinationPacketRecord,
+) -> CrossPollinationPacket:
+    return CrossPollinationPacket(
+        id=record.id,
+        run_id=record.run_id,
+        generation_id=record.generation_id,
+        target_agent_id=record.target_agent_id,
+        source_submission_id=record.source_submission_id,
+        kind=CrossPollinationKind(record.kind),
+        payload=dict(record.payload),
     )
 
 
