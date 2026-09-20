@@ -107,6 +107,24 @@ class VerificationStatus(StrEnum):
     INCONCLUSIVE = "INCONCLUSIVE"
 
 
+class EngineeringStatus(StrEnum):
+    CREATED = "CREATED"
+    PLANNING = "PLANNING"
+    IMPLEMENTING = "IMPLEMENTING"
+    TESTING = "TESTING"
+    REVIEWING = "REVIEWING"
+    REPAIRING = "REPAIRING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class EngineeringStage(StrEnum):
+    PLAN = "PLAN"
+    IMPLEMENTATION = "IMPLEMENTATION"
+    REPAIR = "REPAIR"
+    REVIEW = "REVIEW"
+
+
 class JobType(StrEnum):
     CREATE_GENERATION = "create_generation"
     RUN_RESEARCH_AGENT = "run_research_agent"
@@ -114,6 +132,11 @@ class JobType(StrEnum):
     RUN_JUDGE = "run_judge"
     RUN_CRITIC = "run_critic"
     FINALIZE_RUN = "finalize_run"
+    ENGINEERING_PLAN = "engineering_plan"
+    ENGINEERING_IMPLEMENT = "engineering_implement"
+    ENGINEERING_TEST = "engineering_test"
+    ENGINEERING_REVIEW = "engineering_review"
+    ENGINEERING_REPAIR = "engineering_repair"
 
 
 class JobStatus(StrEnum):
@@ -163,6 +186,8 @@ class RunEventType(StrEnum):
     GENERATION_ADVANCED = "GENERATION_ADVANCED"
     RUN_COMPLETED = "RUN_COMPLETED"
     RUN_FAILED = "RUN_FAILED"
+    ENGINEERING_STAGE_CHANGED = "ENGINEERING_STAGE_CHANGED"
+    ENGINEERING_CHECK_COMPLETED = "ENGINEERING_CHECK_COMPLETED"
 
 
 @dataclass(slots=True)
@@ -327,6 +352,38 @@ class VerificationResult:
 
 
 @dataclass(slots=True)
+class EngineeringRun:
+    title: str
+    objective: str
+    project_id: UUID | None = None
+    status: EngineeringStatus = EngineeringStatus.CREATED
+    repair_count: int = 0
+    max_repairs: int = 2
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass(slots=True)
+class EngineeringArtifact:
+    engineering_run_id: UUID
+    stage: EngineeringStage
+    role: str
+    content: dict[str, Any]
+    raw_response: str
+    repair_cycle: int = 0
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass(slots=True)
+class EngineeringCheck:
+    engineering_run_id: UUID
+    name: str
+    passed: bool
+    detail: str
+    repair_cycle: int = 0
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass(slots=True)
 class ModelProfile:
     provider: str
     model: str
@@ -356,6 +413,7 @@ class ModelCall:
     task_type: str
     status: ModelCallStatus = ModelCallStatus.PENDING
     run_id: UUID | None = None
+    engineering_run_id: UUID | None = None
     agent_id: UUID | None = None
     latency_ms: int | None = None
     input_tokens: int | None = None

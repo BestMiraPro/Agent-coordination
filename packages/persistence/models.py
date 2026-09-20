@@ -27,6 +27,7 @@ from packages.core.domain.models import (
     AgentOrigin,
     AgentStatus,
     CandidateLifecycle,
+    EngineeringStatus,
     JobStatus,
     KnowledgeStatus,
     ModelCallStatus,
@@ -369,6 +370,55 @@ class VerificationResultRecord(TimestampMixin, Base):
     )
 
 
+class EngineeringRunRecord(TimestampMixin, Base):
+    __tablename__ = "engineering_runs"
+    __table_args__ = (
+        CheckConstraint("repair_count >= 0", name="ck_engineering_repair_count"),
+        CheckConstraint("max_repairs >= 0", name="ck_engineering_max_repairs"),
+    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    project_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    objective: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=EngineeringStatus.CREATED.value,
+        server_default=EngineeringStatus.CREATED.value,
+    )
+    repair_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    max_repairs: Mapped[int] = mapped_column(Integer, nullable=False, default=2, server_default="2")
+
+
+class EngineeringArtifactRecord(TimestampMixin, Base):
+    __tablename__ = "engineering_artifacts"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    engineering_run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("engineering_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    stage: Mapped[str] = mapped_column(String(32), nullable=False)
+    role: Mapped[str] = mapped_column(String(64), nullable=False)
+    content: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    raw_response: Mapped[str] = mapped_column(Text, nullable=False)
+    repair_cycle: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+
+class EngineeringCheckRecord(TimestampMixin, Base):
+    __tablename__ = "engineering_checks"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    engineering_run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("engineering_runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    passed: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    detail: Mapped[str] = mapped_column(Text, nullable=False)
+    repair_cycle: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+
 class ModelProfileRecord(TimestampMixin, Base):
     __tablename__ = "model_profiles"
     __table_args__ = (UniqueConstraint("provider", "model", name="uq_model_profile_provider_model"),)
@@ -418,6 +468,9 @@ class ModelCallRecord(TimestampMixin, Base):
     )
     run_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("runs.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    engineering_run_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("engineering_runs.id", ondelete="SET NULL"), nullable=True, index=True
     )
     agent_id: Mapped[UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("agents.id", ondelete="SET NULL"), nullable=True, index=True
