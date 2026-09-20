@@ -74,6 +74,8 @@ def test_create_problem_run_snapshot_and_event_stream(
     assert run_response.status_code == 201
     run = run_response.json()
     assert run["status"] == "CREATED"
+    assert run["fresh_agent_count"] == 1
+    assert run["redundancy_threshold"] == 0.78
 
     with session_factory() as session:
         jobs = session.execute(select(JobRecord)).scalars().all()
@@ -96,6 +98,11 @@ def test_create_problem_run_snapshot_and_event_stream(
     assert len(snapshot["generations"]) == 1
     assert snapshot["generations"][0]["index"] == 0
     assert len(snapshot["generations"][0]["agents"]) == 4
+    assert snapshot["fresh_agent_count"] == 1
+    assert all(
+        agent["niche"] and agent["origin"]
+        for agent in snapshot["generations"][0]["agents"]
+    )
     assert snapshot["generations"][0]["submissions"] == []
     assert snapshot["generations"][0]["evaluations"] == []
 
