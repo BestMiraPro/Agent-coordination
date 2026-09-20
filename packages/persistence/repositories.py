@@ -21,6 +21,7 @@ from packages.core.domain.models import (
     LineageLink,
     ModelCall,
     ModelProfile,
+    ModelState,
     Problem,
     Run,
     RunEvent,
@@ -41,6 +42,7 @@ from packages.persistence.mappers import (
     lineage_from_record,
     model_call_from_record,
     model_profile_from_record,
+    model_state_from_record,
     problem_from_record,
     run_event_from_record,
     run_from_record,
@@ -59,6 +61,7 @@ from packages.persistence.models import (
     LineageLinkRecord,
     ModelCallRecord,
     ModelProfileRecord,
+    ModelStateRecord,
     ProblemRecord,
     RunEventRecord,
     RunRecord,
@@ -602,6 +605,73 @@ class ModelProfileSqlRepository:
         return model_profile_from_record(record) if record else None
 
 
+class ModelStateSqlRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, state: ModelState) -> ModelState:
+        record = ModelStateRecord(
+            id=state.id,
+            model_profile_id=state.model_profile_id,
+            quality_by_task=state.quality_by_task,
+            marginal_cash_cost=state.marginal_cash_cost,
+            credit_cost=state.credit_cost,
+            latency_ms=state.latency_ms,
+            scarcity=state.scarcity,
+            failure_rate=state.failure_rate,
+            rate_limit_pressure=state.rate_limit_pressure,
+            available_concurrency=state.available_concurrency,
+            enabled=state.enabled,
+        )
+        self.session.add(record)
+        self.session.flush()
+        return model_state_from_record(record)
+
+    def get_for_profile(self, model_profile_id: UUID) -> ModelState | None:
+        record = self.session.execute(
+            select(ModelStateRecord).where(
+                ModelStateRecord.model_profile_id == model_profile_id
+            )
+        ).scalar_one_or_none()
+        return model_state_from_record(record) if record else None
+
+    def list_all(self) -> list[ModelState]:
+        records = self.session.execute(
+            select(ModelStateRecord).order_by(
+                ModelStateRecord.created_at,
+                ModelStateRecord.id,
+            )
+        ).scalars()
+        return [model_state_from_record(record) for record in records]
+
+    def observe_call(
+        self,
+        model_profile_id: UUID,
+        *,
+        success: bool,
+        latency_ms: int | None,
+    ) -> ModelState | None:
+        record = self.session.execute(
+            select(ModelStateRecord).where(
+                ModelStateRecord.model_profile_id == model_profile_id
+            )
+        ).scalar_one_or_none()
+        if record is None:
+            return None
+        observation = 0.0 if success else 1.0
+        record.failure_rate = max(
+            0.0,
+            min(1.0, 0.9 * record.failure_rate + 0.1 * observation),
+        )
+        if latency_ms is not None:
+            record.latency_ms = max(
+                0.0,
+                0.8 * record.latency_ms + 0.2 * float(latency_ms),
+            )
+        self.session.flush()
+        return model_state_from_record(record)
+
+
 class ModelCallSqlRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -686,6 +756,7 @@ class SqlAlchemyUnitOfWork:
         self.knowledge = KnowledgeSqlRepository(self.session)
         self.verifications = VerificationSqlRepository(self.session)
         self.model_profiles = ModelProfileSqlRepository(self.session)
+        self.model_states = ModelStateSqlRepository(self.session)
         self.model_calls = ModelCallSqlRepository(self.session)
         self.events = RunEventSqlRepository(self.session)
         return self

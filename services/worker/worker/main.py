@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from packages.core.domain.models import ModelProfile
+from packages.core.domain.models import ModelProfile, ModelState
 from packages.core.orchestration.tournament import TournamentOrchestrator
 from packages.persistence.database import build_engine, build_session_factory
 from packages.persistence.jobs import DurableJobQueue
@@ -10,6 +10,7 @@ from packages.persistence.repositories import SqlAlchemyUnitOfWork
 from packages.providers.base import ModelProvider
 from packages.providers.fake import PhaseOneFakeProvider
 from packages.providers.openai_compatible import OpenAICompatibleProvider
+from packages.providers.routed import AdaptiveProvider, ProviderRoute
 from services.worker.worker.handlers.baseline import BaselineJobHandler
 from services.worker.worker.runtime import run_once, run_worker
 from services.worker.worker.settings import WorkerSettings
@@ -71,7 +72,38 @@ def build_handler(
                     metadata=metadata,
                 )
             )
+        state = uow.model_states.get_for_profile(profile.id)
+        if state is None:
+            state = uow.model_states.add(
+                ModelState(
+                    model_profile_id=profile.id,
+                    quality_by_task={
+                        "default": 0.7,
+                        "research": 0.72,
+                        "judge": 0.7,
+                        "critic": 0.7,
+                    },
+                    marginal_cash_cost=0.0,
+                    credit_cost=0.0,
+                    latency_ms=1000.0,
+                    scarcity=0.0,
+                    failure_rate=0.0,
+                    rate_limit_pressure=0.0,
+                    available_concurrency=1,
+                )
+            )
         uow.commit()
+
+    provider = AdaptiveProvider(
+        [
+            ProviderRoute(
+                model_profile_id=profile.id,
+                model_name=profile.model,
+                provider=provider,
+                state=state,
+            )
+        ]
+    )
 
     queue = DurableJobQueue(session_factory, worker_id=settings.worker_id)
     orchestrator = TournamentOrchestrator(uow_factory, queue)

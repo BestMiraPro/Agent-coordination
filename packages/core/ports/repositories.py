@@ -19,6 +19,7 @@ from packages.core.domain.models import (
     LineageLink,
     ModelCall,
     ModelProfile,
+    ModelState,
     Problem,
     Run,
     RunEvent,
@@ -126,6 +127,19 @@ class ModelProfileRepository(Protocol):
     def find(self, provider: str, model: str) -> ModelProfile | None: ...
 
 
+class ModelStateRepository(Protocol):
+    def add(self, state: ModelState) -> ModelState: ...
+    def get_for_profile(self, model_profile_id: UUID) -> ModelState | None: ...
+    def list_all(self) -> list[ModelState]: ...
+    def observe_call(
+        self,
+        model_profile_id: UUID,
+        *,
+        success: bool,
+        latency_ms: int | None,
+    ) -> ModelState | None: ...
+
+
 class ModelCallRepository(Protocol):
     def add(self, call: ModelCall) -> ModelCall: ...
     def get(self, call_id: UUID) -> ModelCall | None: ...
@@ -161,6 +175,7 @@ class UnitOfWork(Protocol):
     knowledge: KnowledgeRepository
     verifications: VerificationRepository
     model_profiles: ModelProfileRepository
+    model_states: ModelStateRepository
     model_calls: ModelCallRepository
     events: RunEventRepository
 

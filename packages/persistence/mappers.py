@@ -22,6 +22,7 @@ from packages.core.domain.models import (
     ModelCall,
     ModelCallStatus,
     ModelProfile,
+    ModelState,
     MutationType,
     Problem,
     ResearchNiche,
@@ -47,6 +48,7 @@ from packages.persistence.models import (
     LineageLinkRecord,
     ModelCallRecord,
     ModelProfileRecord,
+    ModelStateRecord,
     ProblemRecord,
     RunEventRecord,
     RunRecord,
@@ -216,6 +218,25 @@ def model_profile_from_record(record: ModelProfileRecord) -> ModelProfile:
         model=record.model,
         enabled=record.enabled,
         metadata=dict(record.profile_metadata),
+    )
+
+
+def model_state_from_record(record: ModelStateRecord) -> ModelState:
+    return ModelState(
+        id=record.id,
+        model_profile_id=record.model_profile_id,
+        quality_by_task={
+            str(key): float(value)
+            for key, value in dict(record.quality_by_task).items()
+        },
+        marginal_cash_cost=record.marginal_cash_cost,
+        credit_cost=record.credit_cost,
+        latency_ms=record.latency_ms,
+        scarcity=record.scarcity,
+        failure_rate=record.failure_rate,
+        rate_limit_pressure=record.rate_limit_pressure,
+        available_concurrency=record.available_concurrency,
+        enabled=record.enabled,
     )
 
 

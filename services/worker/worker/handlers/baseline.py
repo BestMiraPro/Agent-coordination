@@ -514,9 +514,15 @@ class BaselineJobHandler:
                 "provider": response.provider,
                 "model": response.model,
             }
+        routed_profile_id = self.model_profile_id
+        if response is not None:
+            raw_profile_id = response.raw_metadata.get("routed_model_profile_id")
+            if raw_profile_id:
+                routed_profile_id = UUID(str(raw_profile_id))
+
         uow.model_calls.add(
             ModelCall(
-                model_profile_id=self.model_profile_id,
+                model_profile_id=routed_profile_id,
                 run_id=run_id,
                 agent_id=agent_id,
                 task_type=request.task_type,
@@ -534,6 +540,11 @@ class BaselineJobHandler:
                 response_metadata=response_metadata,
                 error=error,
             )
+        )
+        uow.model_states.observe_call(
+            routed_profile_id,
+            success=status == ModelCallStatus.COMPLETED,
+            latency_ms=response.latency_ms if response else None,
         )
 
     async def handle_terminal_failure(self, job: Job, error: Exception) -> None:
