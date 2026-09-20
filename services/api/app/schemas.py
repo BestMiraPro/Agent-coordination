@@ -207,3 +207,17 @@ class EventPayload(BaseModel):
     type: str
     payload: dict[str, Any]
     created_at: str | None
+
+
+class ModelStateResponse(BaseModel):
+    id: UUID
+    model_profile_id: UUID
+    quality_by_task: dict[str, float]
+    marginal_cash_cost: float
+    credit_cost: float
+    latency_ms: float
+    scarcity: float
+    failure_rate: float
+    rate_limit_pressure: float
+    available_concurrency: int
+    enabled: bool

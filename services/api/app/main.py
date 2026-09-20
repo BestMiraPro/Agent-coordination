@@ -157,6 +157,27 @@ def create_app(
             verification_enabled=run.verification_enabled,
         )
 
+    @app.get("/model-states", response_model=list[ModelStateResponse])
+    async def get_model_states() -> list[ModelStateResponse]:
+        with uow() as work:
+            states = work.model_states.list_all()
+        return [
+            ModelStateResponse(
+                id=state.id,
+                model_profile_id=state.model_profile_id,
+                quality_by_task=state.quality_by_task,
+                marginal_cash_cost=state.marginal_cash_cost,
+                credit_cost=state.credit_cost,
+                latency_ms=state.latency_ms,
+                scarcity=state.scarcity,
+                failure_rate=state.failure_rate,
+                rate_limit_pressure=state.rate_limit_pressure,
+                available_concurrency=state.available_concurrency,
+                enabled=state.enabled,
+            )
+            for state in states
+        ]
+
     @app.get("/runs/{run_id}", response_model=RunDetailResponse)
     async def get_run(run_id: UUID) -> RunDetailResponse:
         with uow() as work:
