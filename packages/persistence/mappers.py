@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from packages.core.domain.models import (
     Agent,
+    AgentOrigin,
     AgentStatus,
     ClaimDraft,
     Evaluation,
@@ -15,10 +16,12 @@ from packages.core.domain.models import (
     ModelProfile,
     MutationType,
     Problem,
+    ResearchNiche,
     Run,
     RunEvent,
     RunStatus,
     SelectionDecision,
+    SelectionKind,
     Submission,
 )
 from packages.persistence.models import (
@@ -49,6 +52,8 @@ def run_from_record(record: RunRecord) -> Run:
         max_generations=record.max_generations,
         population_size=record.population_size,
         survivor_count=record.survivor_count,
+        fresh_agent_count=record.fresh_agent_count,
+        redundancy_threshold=record.redundancy_threshold,
     )
 
 
@@ -62,6 +67,8 @@ def agent_from_record(record: AgentRecord) -> Agent:
         generation_id=record.generation_id,
         role=record.role,
         status=AgentStatus(record.status),
+        niche=ResearchNiche(record.niche),
+        origin=AgentOrigin(record.origin),
     )
 
 
@@ -106,6 +113,9 @@ def selection_from_record(record: SelectionDecisionRecord) -> SelectionDecision:
         rank=record.rank,
         score_vector=dict(record.score_vector),
         reason=record.reason,
+        selection_kind=SelectionKind(record.selection_kind),
+        novelty_score=record.novelty_score,
+        redundant_with_submission_id=record.redundant_with_submission_id,
     )
 
 

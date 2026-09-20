@@ -23,7 +23,15 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from packages.core.domain.models import AgentStatus, JobStatus, ModelCallStatus, RunStatus
+from packages.core.domain.models import (
+    AgentOrigin,
+    AgentStatus,
+    JobStatus,
+    ModelCallStatus,
+    ResearchNiche,
+    RunStatus,
+    SelectionKind,
+)
 
 
 class Base(DeclarativeBase):
@@ -53,6 +61,12 @@ class RunRecord(TimestampMixin, Base):
         CheckConstraint("population_size > 1", name="ck_run_population_size"),
         CheckConstraint("survivor_count > 0", name="ck_run_survivor_count_positive"),
         CheckConstraint("survivor_count < population_size", name="ck_run_survivors_lt_population"),
+        CheckConstraint("fresh_agent_count >= 0", name="ck_run_fresh_nonnegative"),
+        CheckConstraint("fresh_agent_count < population_size", name="ck_run_fresh_lt_population"),
+        CheckConstraint(
+            "redundancy_threshold >= 0 AND redundancy_threshold <= 1",
+            name="ck_run_redundancy_threshold",
+        ),
     )
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     problem_id: Mapped[UUID] = mapped_column(
@@ -64,6 +78,8 @@ class RunRecord(TimestampMixin, Base):
     max_generations: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
     population_size: Mapped[int] = mapped_column(Integer, nullable=False, default=4, server_default="4")
     survivor_count: Mapped[int] = mapped_column(Integer, nullable=False, default=2, server_default="2")
+    fresh_agent_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    redundancy_threshold: Mapped[float] = mapped_column(Float, nullable=False, default=0.78, server_default="0.78")
 
 
 class GenerationRecord(TimestampMixin, Base):
@@ -85,6 +101,18 @@ class AgentRecord(TimestampMixin, Base):
     role: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default=AgentStatus.PENDING.value, server_default=AgentStatus.PENDING.value
+    )
+    niche: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default=ResearchNiche.CONSTRUCTIVE.value,
+        server_default=ResearchNiche.CONSTRUCTIVE.value,
+    )
+    origin: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=AgentOrigin.INITIAL.value,
+        server_default=AgentOrigin.INITIAL.value,
     )
 
 
@@ -139,6 +167,10 @@ class SelectionDecisionRecord(TimestampMixin, Base):
     __table_args__ = (
         UniqueConstraint("generation_id", "submission_id", name="uq_selection_generation_submission"),
         CheckConstraint("rank > 0", name="ck_selection_rank_positive"),
+        CheckConstraint(
+            "novelty_score >= 0 AND novelty_score <= 1",
+            name="ck_selection_novelty_score",
+        ),
     )
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     generation_id: Mapped[UUID] = mapped_column(
@@ -153,6 +185,19 @@ class SelectionDecisionRecord(TimestampMixin, Base):
         JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
     )
     reason: Mapped[str] = mapped_column(Text, nullable=False)
+    selection_kind: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=SelectionKind.ELIMINATED.value,
+        server_default=SelectionKind.ELIMINATED.value,
+    )
+    novelty_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default="0")
+    redundant_with_submission_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True),
+        ForeignKey("submissions.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
 
 class LineageLinkRecord(TimestampMixin, Base):

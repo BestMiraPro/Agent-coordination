@@ -24,11 +24,37 @@ class AgentStatus(StrEnum):
     FAILED = "FAILED"
 
 
+class AgentOrigin(StrEnum):
+    INITIAL = "INITIAL"
+    CLONED = "CLONED"
+    FRESH = "FRESH"
+
+
+class ResearchNiche(StrEnum):
+    CONSTRUCTIVE = "CONSTRUCTIVE"
+    SKEPTICAL = "SKEPTICAL"
+    COUNTEREXAMPLE = "COUNTEREXAMPLE"
+    COMPUTATIONAL = "COMPUTATIONAL"
+    SPECIAL_CASES = "SPECIAL_CASES"
+    GENERALIZATION = "GENERALIZATION"
+    ALTERNATIVE_FORMULATION = "ALTERNATIVE_FORMULATION"
+    LEMMA_DECOMPOSITION = "LEMMA_DECOMPOSITION"
+
+
 class MutationType(StrEnum):
     STRENGTHEN = "STRENGTHEN"
     FALSIFY = "FALSIFY"
     REDERIVE = "REDERIVE"
     GENERALIZE = "GENERALIZE"
+
+
+class SelectionKind(StrEnum):
+    ELITE = "ELITE"
+    NOVELTY = "NOVELTY"
+    WILDCARD = "WILDCARD"
+    QUALITY = "QUALITY"
+    REDUNDANT = "REDUNDANT"
+    ELIMINATED = "ELIMINATED"
 
 
 class JobType(StrEnum):
@@ -64,10 +90,14 @@ class RunEventType(StrEnum):
     AGENT_FAILED = "AGENT_FAILED"
     JUDGING_STARTED = "JUDGING_STARTED"
     EVALUATION_COMPLETED = "EVALUATION_COMPLETED"
+    DIVERSITY_ANALYZED = "DIVERSITY_ANALYZED"
+    REDUNDANCY_DETECTED = "REDUNDANCY_DETECTED"
     SELECTION_COMPLETED = "SELECTION_COMPLETED"
     BRANCH_SELECTED = "BRANCH_SELECTED"
     BRANCH_ELIMINATED = "BRANCH_ELIMINATED"
+    WILDCARD_SELECTED = "WILDCARD_SELECTED"
     AGENT_CLONED = "AGENT_CLONED"
+    FRESH_AGENT_INJECTED = "FRESH_AGENT_INJECTED"
     GENERATION_ADVANCED = "GENERATION_ADVANCED"
     RUN_COMPLETED = "RUN_COMPLETED"
     RUN_FAILED = "RUN_FAILED"
@@ -87,6 +117,8 @@ class Run:
     max_generations: int = 1
     population_size: int = 4
     survivor_count: int = 2
+    fresh_agent_count: int = 0
+    redundancy_threshold: float = 0.78
     id: UUID = field(default_factory=uuid4)
 
 
@@ -102,6 +134,8 @@ class Agent:
     generation_id: UUID
     role: str
     status: AgentStatus = AgentStatus.PENDING
+    niche: ResearchNiche = ResearchNiche.CONSTRUCTIVE
+    origin: AgentOrigin = AgentOrigin.INITIAL
     id: UUID = field(default_factory=uuid4)
 
 
@@ -150,6 +184,9 @@ class SelectionDecision:
     rank: int
     score_vector: dict[str, float | bool]
     reason: str
+    selection_kind: SelectionKind = SelectionKind.ELIMINATED
+    novelty_score: float = 0.0
+    redundant_with_submission_id: UUID | None = None
     id: UUID = field(default_factory=uuid4)
 
 

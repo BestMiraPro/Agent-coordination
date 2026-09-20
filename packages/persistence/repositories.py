@@ -79,6 +79,8 @@ class RunSqlRepository:
             max_generations=run.max_generations,
             population_size=run.population_size,
             survivor_count=run.survivor_count,
+            fresh_agent_count=run.fresh_agent_count,
+            redundancy_threshold=run.redundancy_threshold,
         )
         self.session.add(record)
         self.session.flush()
@@ -145,6 +147,8 @@ class AgentSqlRepository:
                 generation_id=agent.generation_id,
                 role=agent.role,
                 status=agent.status.value,
+                niche=agent.niche.value,
+                origin=agent.origin.value,
             )
             for agent in agents
         ]
@@ -280,6 +284,9 @@ class SelectionSqlRepository:
                 rank=decision.rank,
                 score_vector=decision.score_vector,
                 reason=decision.reason,
+                selection_kind=decision.selection_kind.value,
+                novelty_score=decision.novelty_score,
+                redundant_with_submission_id=decision.redundant_with_submission_id,
             )
             for decision in decisions
         ]
