@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
+from decimal import Decimal
 from enum import StrEnum
 from typing import Any
 from uuid import UUID, uuid4
@@ -16,6 +18,29 @@ class RunStatus(StrEnum):
 
 
 class AgentStatus(StrEnum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class JobType(StrEnum):
+    CREATE_GENERATION = "create_generation"
+    RUN_RESEARCH_AGENT = "run_research_agent"
+    START_JUDGING = "start_judging"
+    RUN_JUDGE = "run_judge"
+    FINALIZE_RUN = "finalize_run"
+
+
+class JobStatus(StrEnum):
+    PENDING = "PENDING"
+    RUNNING = "RUNNING"
+    RETRY = "RETRY"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+class ModelCallStatus(StrEnum):
     PENDING = "PENDING"
     RUNNING = "RUNNING"
     COMPLETED = "COMPLETED"
@@ -76,6 +101,7 @@ class Submission:
 @dataclass(slots=True)
 class Evaluation:
     submission_id: UUID
+    judge_agent_id: UUID
     correctness: float
     rigor: float
     novelty: float
@@ -93,4 +119,48 @@ class ModelProfile:
     model: str
     enabled: bool = True
     metadata: dict[str, Any] = field(default_factory=dict)
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass(slots=True)
+class ModelCall:
+    model_profile_id: UUID
+    task_type: str
+    status: ModelCallStatus = ModelCallStatus.PENDING
+    run_id: UUID | None = None
+    agent_id: UUID | None = None
+    latency_ms: int | None = None
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    estimated_cost: Decimal | None = None
+    retry_count: int = 0
+    request_metadata: dict[str, Any] = field(default_factory=dict)
+    response_metadata: dict[str, Any] = field(default_factory=dict)
+    error: str | None = None
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass(slots=True)
+class Job:
+    job_type: JobType
+    payload: dict[str, Any]
+    idempotency_key: str
+    status: JobStatus = JobStatus.PENDING
+    attempt: int = 0
+    max_attempts: int = 3
+    available_at: datetime | None = None
+    claimed_at: datetime | None = None
+    lease_expires_at: datetime | None = None
+    claimed_by: str | None = None
+    last_error: str | None = None
+    completed_at: datetime | None = None
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass(slots=True)
+class RunEvent:
+    run_id: UUID
+    event_type: str
+    payload: dict[str, Any] = field(default_factory=dict)
+    created_at: datetime | None = None
     id: UUID = field(default_factory=uuid4)
