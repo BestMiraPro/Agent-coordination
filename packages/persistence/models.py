@@ -371,6 +371,35 @@ class ModelProfileRecord(TimestampMixin, Base):
     )
 
 
+class ModelStateRecord(TimestampMixin, Base):
+    __tablename__ = "model_states"
+    __table_args__ = (
+        UniqueConstraint("model_profile_id", name="uq_model_state_profile"),
+        CheckConstraint("failure_rate >= 0 AND failure_rate <= 1", name="ck_model_state_failure"),
+        CheckConstraint(
+            "rate_limit_pressure >= 0 AND rate_limit_pressure <= 1",
+            name="ck_model_state_rate_pressure",
+        ),
+        CheckConstraint("scarcity >= 0 AND scarcity <= 1", name="ck_model_state_scarcity"),
+        CheckConstraint("available_concurrency >= 0", name="ck_model_state_concurrency"),
+    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    model_profile_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("model_profiles.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    quality_by_task: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    marginal_cash_cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default="0")
+    credit_cost: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default="0")
+    latency_ms: Mapped[float] = mapped_column(Float, nullable=False, default=1000.0, server_default="1000")
+    scarcity: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default="0")
+    failure_rate: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default="0")
+    rate_limit_pressure: Mapped[float] = mapped_column(Float, nullable=False, default=0.0, server_default="0")
+    available_concurrency: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, server_default="true")
+
+
 class ModelCallRecord(TimestampMixin, Base):
     __tablename__ = "model_calls"
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)

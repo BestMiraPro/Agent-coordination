@@ -159,6 +159,7 @@ class RunEventType(StrEnum):
     VERIFICATION_PASSED = "VERIFICATION_PASSED"
     VERIFICATION_FAILED = "VERIFICATION_FAILED"
     VERIFICATION_INCONCLUSIVE = "VERIFICATION_INCONCLUSIVE"
+    ROUTING_DECISION = "ROUTING_DECISION"
     GENERATION_ADVANCED = "GENERATION_ADVANCED"
     RUN_COMPLETED = "RUN_COMPLETED"
     RUN_FAILED = "RUN_FAILED"
@@ -323,6 +324,21 @@ class ModelProfile:
     model: str
     enabled: bool = True
     metadata: dict[str, Any] = field(default_factory=dict)
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass(slots=True)
+class ModelState:
+    model_profile_id: UUID
+    quality_by_task: dict[str, float] = field(default_factory=dict)
+    marginal_cash_cost: float = 0.0
+    credit_cost: float = 0.0
+    latency_ms: float = 1000.0
+    scarcity: float = 0.0
+    failure_rate: float = 0.0
+    rate_limit_pressure: float = 0.0
+    available_concurrency: int = 1
+    enabled: bool = True
     id: UUID = field(default_factory=uuid4)
 
 
