@@ -27,7 +27,69 @@ class PhaseOneFakeProvider:
     """Schema-valid deterministic provider for local tournament validation."""
 
     async def generate(self, request: ModelRequest) -> ModelResponse:
-        if request.task_type == "research":
+        if request.task_type == "engineering_plan":
+            text = json.dumps(
+                {
+                    "summary": "Implement a minimal tested vertical slice.",
+                    "tasks": [
+                        "Implement the primary module.",
+                        "Add deterministic tests.",
+                        "Run review after checks pass.",
+                    ],
+                    "risks": ["Keep generated paths sandbox-safe."],
+                }
+            )
+        elif request.task_type == "engineering_implement":
+            role = str(request.metadata.get("engineering_role") or "primary")
+            if role == "test_specialist":
+                files = [
+                    {
+                        "path": "tests/test_app.py",
+                        "content": "from src.app import solve\n\ndef test_solve():\n    assert solve() == 'ok'\n",
+                    }
+                ]
+            else:
+                files = [
+                    {
+                        "path": "src/app.py",
+                        "content": "def solve():\n    return 'ok'\n",
+                    }
+                ]
+            text = json.dumps(
+                {
+                    "summary": f"Deterministic {role} implementation.",
+                    "files": files,
+                    "test_commands": ["pytest -q"],
+                }
+            )
+        elif request.task_type == "engineering_review":
+            tests_passed = bool(request.metadata.get("tests_passed"))
+            text = json.dumps(
+                {
+                    "approve": tests_passed,
+                    "issues": [] if tests_passed else ["Deterministic checks are failing."],
+                    "systemic_risks": [],
+                    "repair_instructions": [] if tests_passed else ["Repair failing checks."],
+                }
+            )
+        elif request.task_type == "engineering_repair":
+            text = json.dumps(
+                {
+                    "summary": "Deterministic repaired implementation.",
+                    "files": [
+                        {
+                            "path": "src/app.py",
+                            "content": "def solve():\n    return 'ok'\n",
+                        },
+                        {
+                            "path": "tests/test_app.py",
+                            "content": "from src.app import solve\n\ndef test_solve():\n    assert solve() == 'ok'\n",
+                        },
+                    ],
+                    "test_commands": ["pytest -q"],
+                }
+            )
+        elif request.task_type == "research":
             niche = str(request.metadata.get("research_niche") or "CONSTRUCTIVE")
             origin = str(request.metadata.get("agent_origin") or "INITIAL")
             mutation = request.metadata.get("mutation_type")

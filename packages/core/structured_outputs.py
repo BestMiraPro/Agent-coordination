@@ -111,3 +111,58 @@ def parse_critic_output(raw_response: str) -> CriticOutput:
         return CriticOutput.model_validate_json(raw_response)
     except ValidationError as exc:
         raise StructuredOutputError("critic", str(exc)) from exc
+
+
+class EngineeringPlanOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = Field(min_length=1)
+    tasks: list[str] = Field(min_length=1)
+    risks: list[str] = Field(default_factory=list)
+
+
+class EngineeringFileOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: str = Field(min_length=1)
+    content: str
+
+
+class EngineeringImplementationOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    summary: str = Field(min_length=1)
+    files: list[EngineeringFileOutput] = Field(min_length=1)
+    test_commands: list[str] = Field(default_factory=list)
+
+
+class EngineeringReviewOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    approve: bool
+    issues: list[str] = Field(default_factory=list)
+    systemic_risks: list[str] = Field(default_factory=list)
+    repair_instructions: list[str] = Field(default_factory=list)
+
+
+def parse_engineering_plan(raw_response: str) -> EngineeringPlanOutput:
+    try:
+        return EngineeringPlanOutput.model_validate_json(raw_response)
+    except ValidationError as exc:
+        raise StructuredOutputError("engineering_plan", str(exc)) from exc
+
+
+def parse_engineering_implementation(
+    raw_response: str,
+) -> EngineeringImplementationOutput:
+    try:
+        return EngineeringImplementationOutput.model_validate_json(raw_response)
+    except ValidationError as exc:
+        raise StructuredOutputError("engineering_implementation", str(exc)) from exc
+
+
+def parse_engineering_review(raw_response: str) -> EngineeringReviewOutput:
+    try:
+        return EngineeringReviewOutput.model_validate_json(raw_response)
+    except ValidationError as exc:
+        raise StructuredOutputError("engineering_review", str(exc)) from exc
