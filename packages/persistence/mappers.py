@@ -9,6 +9,11 @@ from packages.core.domain.models import (
     ClaimDraft,
     CriticFinding,
     CrossPollinationKind,
+    EngineeringArtifact,
+    EngineeringCheck,
+    EngineeringRun,
+    EngineeringStage,
+    EngineeringStatus,
     CrossPollinationPacket,
     Evaluation,
     Generation,
@@ -42,6 +47,9 @@ from packages.persistence.models import (
     CandidateStateRecord,
     CriticFindingRecord,
     CrossPollinationPacketRecord,
+    EngineeringArtifactRecord,
+    EngineeringCheckRecord,
+    EngineeringRunRecord,
     EvaluationRecord,
     GenerationRecord,
     JobRecord,
@@ -58,6 +66,43 @@ from packages.persistence.models import (
     SubmissionRecord,
     VerificationResultRecord,
 )
+
+
+def engineering_run_from_record(record: EngineeringRunRecord) -> EngineeringRun:
+    return EngineeringRun(
+        id=record.id,
+        project_id=record.project_id,
+        title=record.title,
+        objective=record.objective,
+        status=EngineeringStatus(record.status),
+        repair_count=record.repair_count,
+        max_repairs=record.max_repairs,
+    )
+
+
+def engineering_artifact_from_record(
+    record: EngineeringArtifactRecord,
+) -> EngineeringArtifact:
+    return EngineeringArtifact(
+        id=record.id,
+        engineering_run_id=record.engineering_run_id,
+        stage=EngineeringStage(record.stage),
+        role=record.role,
+        content=dict(record.content),
+        raw_response=record.raw_response,
+        repair_cycle=record.repair_cycle,
+    )
+
+
+def engineering_check_from_record(record: EngineeringCheckRecord) -> EngineeringCheck:
+    return EngineeringCheck(
+        id=record.id,
+        engineering_run_id=record.engineering_run_id,
+        name=record.name,
+        passed=record.passed,
+        detail=record.detail,
+        repair_cycle=record.repair_cycle,
+    )
 
 
 def project_from_record(record: ProjectRecord) -> Project:
@@ -262,6 +307,7 @@ def model_call_from_record(record: ModelCallRecord) -> ModelCall:
         task_type=record.task_type,
         status=ModelCallStatus(record.status),
         run_id=record.run_id,
+        engineering_run_id=record.engineering_run_id,
         agent_id=record.agent_id,
         latency_ms=record.latency_ms,
         input_tokens=record.input_tokens,

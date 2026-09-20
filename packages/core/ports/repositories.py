@@ -11,6 +11,11 @@ from packages.core.domain.models import (
     CandidateState,
     CriticFinding,
     CrossPollinationPacket,
+    EngineeringArtifact,
+    EngineeringCheck,
+    EngineeringRun,
+    EngineeringStage,
+    EngineeringStatus,
     Evaluation,
     Generation,
     Job,
@@ -29,6 +34,39 @@ from packages.core.domain.models import (
     Submission,
     VerificationResult,
 )
+
+
+class EngineeringRunRepository(Protocol):
+    def add(self, run: EngineeringRun) -> EngineeringRun: ...
+    def get(self, engineering_run_id: UUID) -> EngineeringRun | None: ...
+    def list_all(self) -> list[EngineeringRun]: ...
+    def update_status(
+        self,
+        engineering_run_id: UUID,
+        status: EngineeringStatus,
+    ) -> EngineeringRun: ...
+    def increment_repair(self, engineering_run_id: UUID) -> EngineeringRun: ...
+
+
+class EngineeringArtifactRepository(Protocol):
+    def add(self, artifact: EngineeringArtifact) -> EngineeringArtifact: ...
+    def list_for_run(self, engineering_run_id: UUID) -> list[EngineeringArtifact]: ...
+    def list_for_stage(
+        self,
+        engineering_run_id: UUID,
+        stage: EngineeringStage,
+        repair_cycle: int | None = None,
+    ) -> list[EngineeringArtifact]: ...
+
+
+class EngineeringCheckRepository(Protocol):
+    def add_many(self, checks: Iterable[EngineeringCheck]) -> list[EngineeringCheck]: ...
+    def list_for_run(self, engineering_run_id: UUID) -> list[EngineeringCheck]: ...
+    def list_for_cycle(
+        self,
+        engineering_run_id: UUID,
+        repair_cycle: int,
+    ) -> list[EngineeringCheck]: ...
 
 
 class ProjectRepository(Protocol):
@@ -170,6 +208,9 @@ class JobQueue(Protocol):
 
 
 class UnitOfWork(Protocol):
+    engineering_runs: EngineeringRunRepository
+    engineering_artifacts: EngineeringArtifactRepository
+    engineering_checks: EngineeringCheckRepository
     projects: ProjectRepository
     problems: ProblemRepository
     runs: RunRepository

@@ -15,6 +15,11 @@ from packages.core.domain.models import (
     CandidateState,
     CriticFinding,
     CrossPollinationPacket,
+    EngineeringArtifact,
+    EngineeringCheck,
+    EngineeringRun,
+    EngineeringStage,
+    EngineeringStatus,
     Evaluation,
     Generation,
     KnowledgeItem,
@@ -37,6 +42,9 @@ from packages.persistence.mappers import (
     candidate_state_from_record,
     critic_finding_from_record,
     cross_pollination_from_record,
+    engineering_artifact_from_record,
+    engineering_check_from_record,
+    engineering_run_from_record,
     evaluation_from_record,
     generation_from_record,
     knowledge_from_record,
@@ -57,6 +65,9 @@ from packages.persistence.models import (
     CandidateStateRecord,
     CriticFindingRecord,
     CrossPollinationPacketRecord,
+    EngineeringArtifactRecord,
+    EngineeringCheckRecord,
+    EngineeringRunRecord,
     EvaluationRecord,
     GenerationRecord,
     KnowledgeItemRecord,
@@ -72,6 +83,166 @@ from packages.persistence.models import (
     SubmissionRecord,
     VerificationResultRecord,
 )
+
+
+class EngineeringRunSqlRepository:
+    _allowed: dict[EngineeringStatus, set[EngineeringStatus]] = {
+        EngineeringStatus.CREATED: {EngineeringStatus.PLANNING, EngineeringStatus.FAILED},
+        EngineeringStatus.PLANNING: {EngineeringStatus.IMPLEMENTING, EngineeringStatus.FAILED},
+        EngineeringStatus.IMPLEMENTING: {EngineeringStatus.TESTING, EngineeringStatus.FAILED},
+        EngineeringStatus.TESTING: {EngineeringStatus.REVIEWING, EngineeringStatus.FAILED},
+        EngineeringStatus.REVIEWING: {
+            EngineeringStatus.REPAIRING,
+            EngineeringStatus.COMPLETED,
+            EngineeringStatus.FAILED,
+        },
+        EngineeringStatus.REPAIRING: {EngineeringStatus.TESTING, EngineeringStatus.FAILED},
+        EngineeringStatus.COMPLETED: set(),
+        EngineeringStatus.FAILED: set(),
+    }
+
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, run: EngineeringRun) -> EngineeringRun:
+        record = EngineeringRunRecord(
+            id=run.id,
+            project_id=run.project_id,
+            title=run.title,
+            objective=run.objective,
+            status=run.status.value,
+            repair_count=run.repair_count,
+            max_repairs=run.max_repairs,
+        )
+        self.session.add(record)
+        self.session.flush()
+        return engineering_run_from_record(record)
+
+    def get(self, engineering_run_id: UUID) -> EngineeringRun | None:
+        record = self.session.get(EngineeringRunRecord, engineering_run_id)
+        return engineering_run_from_record(record) if record else None
+
+    def list_all(self) -> list[EngineeringRun]:
+        records = self.session.execute(
+            select(EngineeringRunRecord).order_by(
+                EngineeringRunRecord.created_at.desc(),
+                EngineeringRunRecord.id,
+            )
+        ).scalars()
+        return [engineering_run_from_record(record) for record in records]
+
+    def update_status(
+        self,
+        engineering_run_id: UUID,
+        status: EngineeringStatus,
+    ) -> EngineeringRun:
+        record = self.session.get(EngineeringRunRecord, engineering_run_id)
+        if record is None:
+            raise KeyError(f"Engineering run not found: {engineering_run_id}")
+        current = EngineeringStatus(record.status)
+        if status not in self._allowed[current]:
+            raise ValueError(f"Invalid engineering transition: {current} -> {status}")
+        record.status = status.value
+        self.session.flush()
+        return engineering_run_from_record(record)
+
+    def increment_repair(self, engineering_run_id: UUID) -> EngineeringRun:
+        record = self.session.get(EngineeringRunRecord, engineering_run_id)
+        if record is None:
+            raise KeyError(f"Engineering run not found: {engineering_run_id}")
+        record.repair_count += 1
+        self.session.flush()
+        return engineering_run_from_record(record)
+
+
+class EngineeringArtifactSqlRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, artifact: EngineeringArtifact) -> EngineeringArtifact:
+        record = EngineeringArtifactRecord(
+            id=artifact.id,
+            engineering_run_id=artifact.engineering_run_id,
+            stage=artifact.stage.value,
+            role=artifact.role,
+            content=artifact.content,
+            raw_response=artifact.raw_response,
+            repair_cycle=artifact.repair_cycle,
+        )
+        self.session.add(record)
+        self.session.flush()
+        return engineering_artifact_from_record(record)
+
+    def list_for_run(self, engineering_run_id: UUID) -> list[EngineeringArtifact]:
+        records = self.session.execute(
+            select(EngineeringArtifactRecord)
+            .where(EngineeringArtifactRecord.engineering_run_id == engineering_run_id)
+            .order_by(EngineeringArtifactRecord.created_at, EngineeringArtifactRecord.id)
+        ).scalars()
+        return [engineering_artifact_from_record(record) for record in records]
+
+    def list_for_stage(
+        self,
+        engineering_run_id: UUID,
+        stage: EngineeringStage,
+        repair_cycle: int | None = None,
+    ) -> list[EngineeringArtifact]:
+        query = select(EngineeringArtifactRecord).where(
+            EngineeringArtifactRecord.engineering_run_id == engineering_run_id,
+            EngineeringArtifactRecord.stage == stage.value,
+        )
+        if repair_cycle is not None:
+            query = query.where(
+                EngineeringArtifactRecord.repair_cycle == repair_cycle
+            )
+        records = self.session.execute(
+            query.order_by(EngineeringArtifactRecord.created_at, EngineeringArtifactRecord.id)
+        ).scalars()
+        return [engineering_artifact_from_record(record) for record in records]
+
+
+class EngineeringCheckSqlRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add_many(self, checks: Iterable[EngineeringCheck]) -> list[EngineeringCheck]:
+        records = [
+            EngineeringCheckRecord(
+                id=check.id,
+                engineering_run_id=check.engineering_run_id,
+                name=check.name,
+                passed=check.passed,
+                detail=check.detail,
+                repair_cycle=check.repair_cycle,
+            )
+            for check in checks
+        ]
+        self.session.add_all(records)
+        self.session.flush()
+        return [engineering_check_from_record(record) for record in records]
+
+    def list_for_run(self, engineering_run_id: UUID) -> list[EngineeringCheck]:
+        records = self.session.execute(
+            select(EngineeringCheckRecord)
+            .where(EngineeringCheckRecord.engineering_run_id == engineering_run_id)
+            .order_by(EngineeringCheckRecord.created_at, EngineeringCheckRecord.id)
+        ).scalars()
+        return [engineering_check_from_record(record) for record in records]
+
+    def list_for_cycle(
+        self,
+        engineering_run_id: UUID,
+        repair_cycle: int,
+    ) -> list[EngineeringCheck]:
+        records = self.session.execute(
+            select(EngineeringCheckRecord)
+            .where(
+                EngineeringCheckRecord.engineering_run_id == engineering_run_id,
+                EngineeringCheckRecord.repair_cycle == repair_cycle,
+            )
+            .order_by(EngineeringCheckRecord.created_at, EngineeringCheckRecord.id)
+        ).scalars()
+        return [engineering_check_from_record(record) for record in records]
 
 
 class ProjectSqlRepository:
@@ -720,6 +891,7 @@ class ModelCallSqlRepository:
             id=call.id,
             model_profile_id=call.model_profile_id,
             run_id=call.run_id,
+            engineering_run_id=call.engineering_run_id,
             agent_id=call.agent_id,
             task_type=call.task_type,
             status=call.status.value,
@@ -789,6 +961,9 @@ class SqlAlchemyUnitOfWork:
 
     def __enter__(self) -> Self:
         self.session = self.session_factory()
+        self.engineering_runs = EngineeringRunSqlRepository(self.session)
+        self.engineering_artifacts = EngineeringArtifactSqlRepository(self.session)
+        self.engineering_checks = EngineeringCheckSqlRepository(self.session)
         self.projects = ProjectSqlRepository(self.session)
         self.problems = ProblemSqlRepository(self.session)
         self.runs = RunSqlRepository(self.session)
