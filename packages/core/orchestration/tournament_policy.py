@@ -68,6 +68,7 @@ class TournamentPolicy:
         evaluations: list[Evaluation],
         survivor_count: int,
         redundancy_threshold: float = 0.78,
+        refuted_submission_ids: set[UUID] | None = None,
     ) -> list[SelectionDecision]:
         if not submissions:
             raise ValueError("Cannot select from an empty generation")
@@ -76,7 +77,11 @@ class TournamentPolicy:
         if not 0.0 <= redundancy_threshold <= 1.0:
             raise ValueError("redundancy_threshold must be between 0 and 1")
 
-        aggregates = self._aggregate(submissions, evaluations)
+        aggregates = self._aggregate(
+            submissions,
+            evaluations,
+            refuted_submission_ids=refuted_submission_ids or set(),
+        )
         ranked = sorted(aggregates, key=self._quality_key)
         rank_by_id = {
             aggregate.submission_id: index
@@ -217,6 +222,8 @@ class TournamentPolicy:
         self,
         submissions: list[Submission],
         evaluations: list[Evaluation],
+        *,
+        refuted_submission_ids: set[UUID],
     ) -> list[AggregateEvaluation]:
         by_submission: dict[UUID, list[Evaluation]] = defaultdict(list)
         for evaluation in evaluations:
@@ -230,7 +237,10 @@ class TournamentPolicy:
             aggregates.append(
                 AggregateEvaluation(
                     submission_id=submission.id,
-                    fatal_error=any(item.fatal_error for item in judged),
+                    fatal_error=(
+                        submission.id in refuted_submission_ids
+                        or any(item.fatal_error for item in judged)
+                    ),
                     correctness=fmean(item.correctness for item in judged),
                     rigor=fmean(item.rigor for item in judged),
                     novelty=fmean(item.novelty for item in judged),

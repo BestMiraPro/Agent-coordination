@@ -63,6 +63,15 @@ class PhaseOneFakeProvider:
                     "final_answer": f"Synthetic {niche.lower()} answer.",
                 }
             )
+        elif request.task_type == "critic":
+            text = json.dumps(
+                {
+                    "fatal_error": False,
+                    "confidence": 0.8,
+                    "critique": "No fatal flaw found by deterministic critic.",
+                    "counterexample": None,
+                }
+            )
         elif request.task_type == "judge":
             candidate_ids = request.metadata.get("candidate_ids") or []
             text = json.dumps(

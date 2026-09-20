@@ -50,6 +50,15 @@ class JudgeOutput(BaseModel):
     evaluations: list[CandidateEvaluationOutput] = Field(min_length=1)
 
 
+class CriticOutput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fatal_error: bool
+    confidence: Score
+    critique: str = Field(min_length=1)
+    counterexample: str | None = None
+
+
 class StructuredOutputError(ValueError):
     def __init__(self, output_kind: str, detail: str) -> None:
         self.output_kind = output_kind
@@ -95,3 +104,10 @@ def parse_judge_output(
         )
 
     return output
+
+
+def parse_critic_output(raw_response: str) -> CriticOutput:
+    try:
+        return CriticOutput.model_validate_json(raw_response)
+    except ValidationError as exc:
+        raise StructuredOutputError("critic", str(exc)) from exc

@@ -10,7 +10,7 @@ from packages.core.domain.models import (
     Submission,
 )
 from packages.core.orchestration.baseline import BlindedSubmission
-from packages.core.structured_outputs import JudgeOutput, ResearcherOutput
+from packages.core.structured_outputs import CriticOutput, JudgeOutput, ResearcherOutput
 from packages.providers.base import ModelRequest
 
 
@@ -205,6 +205,48 @@ def build_judge_request(
                         "problem": problem.prompt,
                         "candidates": candidates,
                         "required_candidate_ids": candidate_ids,
+                        "output_schema": schema,
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        ],
+    )
+
+
+def build_critic_request(
+    problem: Problem,
+    submission: Submission,
+    model_profile: str,
+) -> ModelRequest:
+    schema = CriticOutput.model_json_schema()
+    return ModelRequest(
+        model_profile=model_profile,
+        task_type="critic",
+        temperature=0.1,
+        max_tokens=3500,
+        response_schema=schema,
+        metadata={
+            "problem_id": str(problem.id),
+            "submission_id": str(submission.id),
+        },
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "You are an adversarial research critic. Your reward is for finding "
+                    "a real fatal flaw, counterexample, hidden assumption, or unsupported "
+                    "step in the candidate. Do not manufacture objections. If the candidate "
+                    "survives, say so. Return only JSON matching the supplied schema."
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "title": problem.title,
+                        "problem": problem.prompt,
+                        "candidate": _submission_payload(submission),
                         "output_schema": schema,
                     },
                     ensure_ascii=False,
