@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from time import monotonic
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Query, Request, status
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, sessionmaker
 
@@ -38,6 +40,20 @@ def create_app(
     queue: DurableJobQueue | None = None,
 ) -> FastAPI:
     app = FastAPI(title="Agent Coordination API", version="0.1.0")
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[
+            origin.strip()
+            for origin in os.getenv(
+                "WEB_ORIGIN",
+                "http://localhost:3000",
+            ).split(",")
+            if origin.strip()
+        ],
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "OPTIONS"],
+        allow_headers=["*"],
+    )
 
     if session_factory is None:
         engine = build_engine()
