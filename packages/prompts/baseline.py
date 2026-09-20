@@ -91,6 +91,7 @@ def build_research_request(
     origin: AgentOrigin = AgentOrigin.INITIAL,
     parent_submission: Submission | None = None,
     mutation_type: MutationType | None = None,
+    memory_context: list[dict[str, object]] | None = None,
 ) -> ModelRequest:
     schema = ResearcherOutput.model_json_schema()
     metadata: dict[str, object] = {
@@ -105,6 +106,8 @@ def build_research_request(
         "niche_objective": _NICHE_INSTRUCTIONS[niche],
         "output_schema": schema,
     }
+    if memory_context:
+        task["research_memory"] = memory_context
 
     if parent_submission is None:
         if origin == AgentOrigin.FRESH:

@@ -33,6 +33,7 @@ from services.api.app.schemas import (
     RunDetailResponse,
     SelectionResponse,
     LineageResponse,
+    KnowledgeResponse,
     SubmissionResponse,
 )
 
@@ -171,6 +172,7 @@ def create_app(
                 evaluations = work.evaluations.list_for_generation(generation.id)
                 selections = work.selections.list_for_generation(generation.id)
                 lineages = work.lineages.list_for_generation(generation.id)
+                knowledge = work.knowledge.list_for_generation(generation.id)
 
                 generations.append(
                     GenerationResponse(
@@ -249,6 +251,19 @@ def create_app(
                                 mutation_type=lineage.mutation_type,
                             )
                             for lineage in lineages
+                        ],
+                        knowledge=[
+                            KnowledgeResponse(
+                                id=item.id,
+                                generation_id=item.generation_id,
+                                submission_id=item.submission_id,
+                                kind=item.kind,
+                                content=item.content,
+                                status=item.status,
+                                confidence=item.confidence,
+                                provenance=item.provenance,
+                            )
+                            for item in knowledge
                         ],
                     )
                 )

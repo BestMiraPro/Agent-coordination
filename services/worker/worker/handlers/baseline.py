@@ -19,6 +19,7 @@ from packages.core.domain.models import (
     Submission,
 )
 from packages.core.orchestration.baseline import blind_submissions
+from packages.core.research.memory import build_memory_packet, extract_knowledge
 from packages.core.ports.repositories import UnitOfWork
 from packages.core.structured_outputs import parse_judge_output, parse_researcher_output
 from packages.prompts.baseline import build_judge_request, build_research_request
@@ -133,6 +134,20 @@ class BaselineJobHandler:
                 if lineage is not None
                 else None
             )
+            memory_context: list[dict[str, object]] = []
+            if agent.origin.value != "FRESH" and generation.index > 0:
+                previous_generation_ids = {
+                    item.id
+                    for item in uow.generations.list_for_run(run_id)
+                    if item.index < generation.index
+                }
+                memory_context = build_memory_packet(
+                    [
+                        item
+                        for item in uow.knowledge.list_for_run(run_id)
+                        if item.generation_id in previous_generation_ids
+                    ]
+                )
             if lineage is not None and parent_submission is None:
                 raise RuntimeError("Lineage parent submission is missing")
 
@@ -158,6 +173,7 @@ class BaselineJobHandler:
             origin=agent.origin,
             parent_submission=parent_submission,
             mutation_type=lineage.mutation_type if lineage is not None else None,
+            memory_context=memory_context,
         )
         response: ModelResponse | None = None
         try:
@@ -189,7 +205,27 @@ class BaselineJobHandler:
 
         with self.uow_factory() as uow:
             if uow.submissions.get_for_agent(agent_id) is None:
-                uow.submissions.add(submission)
+                stored_submission = uow.submissions.add(submission)
+                knowledge_items = extract_knowledge(
+                    run_id=run_id,
+                    generation_id=generation.id,
+                    submission=stored_submission,
+                )
+                if knowledge_items:
+                    uow.knowledge.add_many(knowledge_items)
+                    for item in knowledge_items:
+                        uow.events.append(
+                            RunEvent(
+                                run_id=run_id,
+                                event_type=RunEventType.KNOWLEDGE_CREATED.value,
+                                payload={
+                                    "knowledge_id": str(item.id),
+                                    "generation_id": str(generation.id),
+                                    "submission_id": str(stored_submission.id),
+                                    "kind": item.kind.value,
+                                },
+                            )
+                        )
             self._add_model_call(uow, run_id, agent_id, request, response)
             uow.agents.update_status(agent_id, AgentStatus.COMPLETED)
             uow.events.append(

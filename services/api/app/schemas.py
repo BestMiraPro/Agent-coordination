@@ -8,6 +8,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from packages.core.domain.models import (
     AgentOrigin,
     AgentStatus,
+    KnowledgeKind,
+    KnowledgeStatus,
     MutationType,
     ResearchNiche,
     RunStatus,
@@ -111,6 +113,17 @@ class LineageResponse(BaseModel):
     mutation_type: MutationType
 
 
+class KnowledgeResponse(BaseModel):
+    id: UUID
+    generation_id: UUID
+    submission_id: UUID | None
+    kind: KnowledgeKind
+    content: str
+    status: KnowledgeStatus
+    confidence: float | None
+    provenance: dict[str, Any]
+
+
 class AgentResponse(BaseModel):
     id: UUID
     role: str
@@ -127,6 +140,7 @@ class GenerationResponse(BaseModel):
     evaluations: list[EvaluationResponse]
     selections: list[SelectionResponse]
     lineages: list[LineageResponse]
+    knowledge: list[KnowledgeResponse]
 
 
 class RunDetailResponse(BaseModel):
