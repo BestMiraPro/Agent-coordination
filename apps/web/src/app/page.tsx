@@ -23,10 +23,14 @@ const EVENT_TYPES = [
   "AGENT_FAILED",
   "JUDGING_STARTED",
   "EVALUATION_COMPLETED",
+  "DIVERSITY_ANALYZED",
+  "REDUNDANCY_DETECTED",
   "SELECTION_COMPLETED",
   "BRANCH_SELECTED",
   "BRANCH_ELIMINATED",
+  "WILDCARD_SELECTED",
   "AGENT_CLONED",
+  "FRESH_AGENT_INJECTED",
   "GENERATION_ADVANCED",
   "RUN_COMPLETED",
   "RUN_FAILED",
@@ -34,6 +38,7 @@ const EVENT_TYPES = [
 
 const shortId = (value: string) => value.slice(0, 8);
 const pct = (value: number) => Math.round(value * 100);
+const humanize = (value: string) => value.replaceAll("_", " ").toLowerCase();
 
 export default function Home() {
   const [title, setTitle] = useState("Research problem");
@@ -41,6 +46,8 @@ export default function Home() {
   const [maxGenerations, setMaxGenerations] = useState(3);
   const [populationSize, setPopulationSize] = useState(4);
   const [survivorCount, setSurvivorCount] = useState(2);
+  const [freshAgentCount, setFreshAgentCount] = useState(1);
+  const [redundancyThreshold, setRedundancyThreshold] = useState(0.78);
   const [runId, setRunId] = useState<string | null>(null);
   const [run, setRun] = useState<RunDetail | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
@@ -97,6 +104,10 @@ export default function Home() {
       setError("Survivors must be fewer than the population.");
       return;
     }
+    if (freshAgentCount >= populationSize) {
+      setError("Fresh explorers must be fewer than the population.");
+      return;
+    }
 
     setStarting(true);
     setError(null);
@@ -112,6 +123,8 @@ export default function Home() {
         maxGenerations,
         populationSize,
         survivorCount,
+        freshAgentCount,
+        redundancyThreshold,
       });
       setRunId(created.id);
       await refreshRun(created.id);
@@ -123,8 +136,10 @@ export default function Home() {
   }
 
   const generation = run?.generations.at(-1) ?? null;
-  const researchers = generation?.agents.filter((a) => a.role.startsWith("researcher:")) ?? [];
-  const judges = generation?.agents.filter((a) => a.role.startsWith("judge:")) ?? [];
+  const researchers =
+    generation?.agents.filter((agent) => agent.role.startsWith("researcher:")) ?? [];
+  const judges =
+    generation?.agents.filter((agent) => agent.role.startsWith("judge:")) ?? [];
   const lineageByAgent = useMemo(() => {
     const map = new Map<string, Lineage>();
     for (const lineage of generation?.lineages ?? []) {
@@ -136,10 +151,13 @@ export default function Home() {
   const counts = useMemo(() => {
     const agents = generation?.agents ?? [];
     return {
-      total: agents.length,
-      running: agents.filter((a) => a.status === "RUNNING").length,
-      complete: agents.filter((a) => a.status === "COMPLETED").length,
-      failed: agents.filter((a) => a.status === "FAILED").length,
+      running: agents.filter((agent) => agent.status === "RUNNING").length,
+      fresh: agents.filter((agent) => agent.origin === "FRESH").length,
+      niches: new Set(
+        agents
+          .filter((agent) => agent.role.startsWith("researcher:"))
+          .map((agent) => agent.niche),
+      ).size,
     };
   }, [generation]);
 
@@ -148,13 +166,14 @@ export default function Home() {
       <header className="hero">
         <div>
           <p className="eyebrow">Agent Coordination</p>
-          <h1>Research tournament</h1>
+          <h1>Diversity-preserving tournament</h1>
           <p className="lede">
-            Launch an evolutionary research run, watch independent agents compete,
-            then follow selection, cloning, mutation, and lineage across generations.
+            Compete, select, and evolve research branches while protecting novel
+            approaches from premature convergence with niches, redundancy detection,
+            wildcard survival, and fresh blind explorers.
           </p>
         </div>
-        <div className="systemBadge"><span className="pulse" />Phase 2</div>
+        <div className="systemBadge"><span className="pulse" />Phase 3</div>
       </header>
 
       <section className="grid topGrid">
@@ -209,6 +228,27 @@ export default function Home() {
                 onChange={(e) => setSurvivorCount(Number(e.target.value))}
               />
             </label>
+            <label>
+              Fresh / generation
+              <input
+                type="number"
+                min={0}
+                max={11}
+                value={freshAgentCount}
+                onChange={(e) => setFreshAgentCount(Number(e.target.value))}
+              />
+            </label>
+            <label>
+              Redundancy threshold
+              <input
+                type="number"
+                min={0}
+                max={1}
+                step={0.01}
+                value={redundancyThreshold}
+                onChange={(e) => setRedundancyThreshold(Number(e.target.value))}
+              />
+            </label>
           </div>
 
           <button type="submit" disabled={starting}>
@@ -230,12 +270,20 @@ export default function Home() {
             <>
               <p className="problemText">{run.problem.prompt}</p>
               <div className="metricGrid">
-                <Metric label="Generation" value={(generation?.index ?? 0) + 1} suffix={`/${run.max_generations}`} />
+                <Metric
+                  label="Generation"
+                  value={(generation?.index ?? 0) + 1}
+                  suffix={`/${run.max_generations}`}
+                />
                 <Metric label="Population" value={run.population_size} />
                 <Metric label="Survivors" value={run.survivor_count} />
-                <Metric label="Running" value={counts.running} />
-                <Metric label="Submissions" value={generation?.submissions.length ?? 0} />
-                <Metric label="Evaluations" value={generation?.evaluations.length ?? 0} />
+                <Metric label="Fresh" value={counts.fresh} />
+                <Metric label="Niches" value={counts.niches} />
+                <Metric
+                  label="Redundancy"
+                  value={Math.round(run.redundancy_threshold * 100)}
+                  suffix="%"
+                />
               </div>
               <p className="runId">Run <code>{run.id}</code></p>
             </>
@@ -243,7 +291,7 @@ export default function Home() {
             <div className="emptyState">
               <div>
                 <p>A tournament will appear here when started.</p>
-                <span>research → judge → select → clone + mutate → next generation</span>
+                <span>niches → judge → diversity selection → clone + fresh explorers</span>
               </div>
             </div>
           )}
@@ -294,34 +342,38 @@ export default function Home() {
             </div>
             {generation.submissions.length ? (
               <div className="submissionGrid">
-                {generation.submissions.map((submission, index) => (
-                  <article className="card" key={submission.id}>
-                    <div className="cardTopline">
-                      <span>Candidate {index + 1}</span>
-                      <code>{shortId(submission.agent_id)}</code>
-                    </div>
-                    <h3>{submission.summary}</h3>
-                    <p>{submission.approach}</p>
-                    {submission.final_answer ? (
-                      <div className="answer">
-                        <span>Final candidate</span>
-                        <p>{submission.final_answer}</p>
+                {generation.submissions.map((submission, index) => {
+                  const agent = generation.agents.find((item) => item.id === submission.agent_id);
+                  return (
+                    <article className="card" key={submission.id}>
+                      <div className="cardTopline">
+                        <span>Candidate {index + 1}</span>
+                        <code>{shortId(submission.agent_id)}</code>
                       </div>
-                    ) : null}
-                    <div className="chips">
-                      <span>{submission.claims.length} claims</span>
-                      <span>{submission.discoveries.length} discoveries</span>
-                      <span>{submission.open_questions.length} open questions</span>
-                    </div>
-                  </article>
-                ))}
+                      {agent ? (
+                        <div className="chips">
+                          <span>{humanize(agent.niche)}</span>
+                          <span>{humanize(agent.origin)}</span>
+                        </div>
+                      ) : null}
+                      <h3>{submission.summary}</h3>
+                      <p>{submission.approach}</p>
+                      {submission.final_answer ? (
+                        <div className="answer">
+                          <span>Final candidate</span>
+                          <p>{submission.final_answer}</p>
+                        </div>
+                      ) : null}
+                    </article>
+                  );
+                })}
               </div>
             ) : <p className="muted">Structured submissions appear as researchers finish.</p>}
           </section>
 
           <section className="panel">
             <div className="panelHeading">
-              <div><p className="kicker">Evolution</p><h2>Selection & lineage history</h2></div>
+              <div><p className="kicker">Evolution</p><h2>Selection & diversity history</h2></div>
               <span className="count">{run.generations.length}</span>
             </div>
             <div className="evolutionGrid">
@@ -428,9 +480,12 @@ function AgentPanel({
                 <div>
                   <strong>{agent.role}</strong>
                   <code>{shortId(agent.id)}</code>
+                  <span className="lineageLabel">
+                    {humanize(agent.niche)} · {humanize(agent.origin)}
+                  </span>
                   {lineage ? (
                     <span className="lineageLabel">
-                      {lineage.mutation_type.toLowerCase()} from {shortId(lineage.parent_submission_id)}
+                      {humanize(lineage.mutation_type)} from {shortId(lineage.parent_submission_id)}
                     </span>
                   ) : null}
                 </div>
@@ -446,7 +501,9 @@ function AgentPanel({
 
 function GenerationHistory({ generation }: { generation: Generation }) {
   const selected = generation.selections.filter((item) => item.selected);
-  const eliminated = generation.selections.filter((item) => !item.selected);
+  const redundant = generation.selections.filter(
+    (item) => item.redundant_with_submission_id !== null,
+  );
 
   return (
     <article className="generationHistory">
@@ -457,15 +514,19 @@ function GenerationHistory({ generation }: { generation: Generation }) {
       {generation.selections.length ? (
         <>
           <p>
-            <b>{selected.length}</b> selected · <b>{eliminated.length}</b> eliminated
+            <b>{selected.length}</b> selected · <b>{redundant.length}</b> redundant
           </p>
           <div className="selectionList">
             {generation.selections.map((decision) => (
               <span
                 key={decision.id}
                 className={decision.selected ? "selection selected" : "selection eliminated"}
+                title={decision.reason}
               >
-                #{decision.rank} {shortId(decision.submission_id)}
+                #{decision.rank} {humanize(decision.selection_kind)} · novelty {pct(decision.novelty_score)}
+                {decision.redundant_with_submission_id
+                  ? ` ↔ ${shortId(decision.redundant_with_submission_id)}`
+                  : ""}
               </span>
             ))}
           </div>
@@ -477,7 +538,7 @@ function GenerationHistory({ generation }: { generation: Generation }) {
         <div className="chips">
           {generation.lineages.map((lineage) => (
             <span key={lineage.id}>
-              {lineage.mutation_type.toLowerCase()} ← {shortId(lineage.parent_submission_id)}
+              {humanize(lineage.mutation_type)} ← {shortId(lineage.parent_submission_id)}
             </span>
           ))}
         </div>

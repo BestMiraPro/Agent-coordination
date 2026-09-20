@@ -8,11 +8,31 @@ export type RunStatus =
 
 export type AgentStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
 
+export type AgentOrigin = "INITIAL" | "CLONED" | "FRESH";
+
+export type ResearchNiche =
+  | "CONSTRUCTIVE"
+  | "SKEPTICAL"
+  | "COUNTEREXAMPLE"
+  | "COMPUTATIONAL"
+  | "SPECIAL_CASES"
+  | "GENERALIZATION"
+  | "ALTERNATIVE_FORMULATION"
+  | "LEMMA_DECOMPOSITION";
+
 export type MutationType =
   | "STRENGTHEN"
   | "FALSIFY"
   | "REDERIVE"
   | "GENERALIZE";
+
+export type SelectionKind =
+  | "ELITE"
+  | "NOVELTY"
+  | "WILDCARD"
+  | "QUALITY"
+  | "REDUNDANT"
+  | "ELIMINATED";
 
 export type Claim = {
   statement: string;
@@ -55,6 +75,9 @@ export type SelectionDecision = {
   rank: number;
   score_vector: Record<string, number | boolean>;
   reason: string;
+  selection_kind: SelectionKind;
+  novelty_score: number;
+  redundant_with_submission_id: string | null;
 };
 
 export type Lineage = {
@@ -68,6 +91,8 @@ export type Agent = {
   id: string;
   role: string;
   status: AgentStatus;
+  niche: ResearchNiche;
+  origin: AgentOrigin;
 };
 
 export type Generation = {
@@ -86,6 +111,8 @@ export type RunDetail = {
   max_generations: number;
   population_size: number;
   survivor_count: number;
+  fresh_agent_count: number;
+  redundancy_threshold: number;
   problem: {
     id: string;
     title: string;
@@ -134,6 +161,8 @@ export async function createRun(
     maxGenerations: number;
     populationSize: number;
     survivorCount: number;
+    freshAgentCount: number;
+    redundancyThreshold: number;
   },
 ) {
   return request<{
@@ -143,6 +172,8 @@ export async function createRun(
     max_generations: number;
     population_size: number;
     survivor_count: number;
+    fresh_agent_count: number;
+    redundancy_threshold: number;
   }>("/runs", {
     method: "POST",
     body: JSON.stringify({
@@ -150,6 +181,8 @@ export async function createRun(
       max_generations: config.maxGenerations,
       population_size: config.populationSize,
       survivor_count: config.survivorCount,
+      fresh_agent_count: config.freshAgentCount,
+      redundancy_threshold: config.redundancyThreshold,
     }),
   });
 }

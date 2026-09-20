@@ -95,7 +95,7 @@ code { color:#b6bdc9; font-family:"SFMono-Regular",Consolas,monospace; font-size
 
 .configGrid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 10px;
 }
 .generationStrip {
