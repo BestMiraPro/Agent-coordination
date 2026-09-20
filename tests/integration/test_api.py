@@ -154,3 +154,68 @@ def test_last_event_id_header_is_validated(
         headers={"Last-Event-ID": "not-a-uuid"},
     )
     assert response.status_code == 400
+
+
+def test_projects_metrics_and_manual_knowledge(
+    client_and_queue: tuple[TestClient, DurableJobQueue],
+    session_factory: sessionmaker[Session],
+) -> None:
+    client, queue = client_and_queue
+    project_response = client.post(
+        "/projects",
+        json={"name": "Control room project", "description": "dashboard test"},
+    )
+    assert project_response.status_code == 201
+    project = project_response.json()
+
+    projects = client.get("/projects")
+    assert projects.status_code == 200
+    assert any(item["id"] == project["id"] for item in projects.json())
+
+    problem = client.post(
+        "/problems",
+        json={
+            "title": "Dashboard problem",
+            "prompt": "Exercise dashboard APIs.",
+            "project_id": project["id"],
+        },
+    ).json()
+    run = client.post(
+        "/runs",
+        json={
+            "problem_id": problem["id"],
+            "critic_count": 0,
+            "verification_enabled": False,
+        },
+    ).json()
+
+    def uow_factory() -> SqlAlchemyUnitOfWork:
+        return SqlAlchemyUnitOfWork(session_factory)
+
+    BaselineOrchestrator(uow_factory, queue).start_run(
+        run_id=__import__("uuid").UUID(run["id"])
+    )
+
+    injected = client.post(
+        f"/runs/{run['id']}/knowledge",
+        json={
+            "kind": "HYPOTHESIS",
+            "content": "Manual operator hypothesis.",
+            "confidence": 0.6,
+        },
+    )
+    assert injected.status_code == 201
+    assert injected.json()["provenance"]["source"] == "manual_control_room"
+
+    metrics = client.get(f"/runs/{run['id']}/metrics")
+    assert metrics.status_code == 200
+    assert metrics.json()["generations"] == 1
+    assert metrics.json()["knowledge_items"] == 1
+
+    runs = client.get("/runs")
+    assert runs.status_code == 200
+    assert any(item["id"] == run["id"] for item in runs.json())
+
+    model_states = client.get("/model-states")
+    assert model_states.status_code == 200
+    assert isinstance(model_states.json(), list)
