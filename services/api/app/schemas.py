@@ -10,6 +10,8 @@ from packages.core.domain.models import (
     AgentStatus,
     CandidateLifecycle,
     CrossPollinationKind,
+    EngineeringStage,
+    EngineeringStatus,
     KnowledgeKind,
     KnowledgeStatus,
     MutationType,
@@ -269,3 +271,43 @@ class ManualKnowledgeCreate(BaseModel):
     kind: KnowledgeKind
     content: str = Field(min_length=1)
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+
+
+class EngineeringRunCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=300)
+    objective: str = Field(min_length=1)
+    project_id: UUID | None = None
+    max_repairs: int = Field(default=2, ge=0, le=5)
+
+
+class EngineeringRunSummaryResponse(BaseModel):
+    id: UUID
+    project_id: UUID | None
+    title: str
+    objective: str
+    status: EngineeringStatus
+    repair_count: int
+    max_repairs: int
+
+
+class EngineeringArtifactResponse(BaseModel):
+    id: UUID
+    stage: EngineeringStage
+    role: str
+    content: dict[str, Any]
+    repair_cycle: int
+
+
+class EngineeringCheckResponse(BaseModel):
+    id: UUID
+    name: str
+    passed: bool
+    detail: str
+    repair_cycle: int
+
+
+class EngineeringRunDetailResponse(EngineeringRunSummaryResponse):
+    artifacts: list[EngineeringArtifactResponse]
+    checks: list[EngineeringCheckResponse]

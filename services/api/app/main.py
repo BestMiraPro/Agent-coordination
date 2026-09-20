@@ -13,6 +13,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session, sessionmaker
 
 from packages.core.domain.models import (
+    EngineeringRun,
     JobType,
     KnowledgeItem,
     Problem,
@@ -21,6 +22,7 @@ from packages.core.domain.models import (
     RunEvent,
     RunEventType,
 )
+from packages.core.engineering.orchestration import EngineeringOrchestrator
 from packages.persistence.database import build_engine, build_session_factory
 from packages.persistence.jobs import DurableJobQueue
 from packages.persistence.repositories import SqlAlchemyUnitOfWork
@@ -30,6 +32,11 @@ from services.api.app.schemas import (
     ClaimResponse,
     CriticFindingResponse,
     CrossPollinationResponse,
+    EngineeringArtifactResponse,
+    EngineeringCheckResponse,
+    EngineeringRunCreate,
+    EngineeringRunDetailResponse,
+    EngineeringRunSummaryResponse,
     EvaluationResponse,
     GenerationResponse,
     KnowledgeResponse,
@@ -86,6 +93,109 @@ def create_app(
     @app.get("/health")
     async def health() -> dict[str, str]:
         return {"status": "ok"}
+
+    @app.post(
+        "/engineering-runs",
+        response_model=EngineeringRunSummaryResponse,
+        status_code=status.HTTP_201_CREATED,
+    )
+    async def create_engineering_run(
+        body: EngineeringRunCreate,
+    ) -> EngineeringRunSummaryResponse:
+        run = EngineeringRun(
+            title=body.title,
+            objective=body.objective,
+            project_id=body.project_id,
+            max_repairs=body.max_repairs,
+        )
+        with uow() as work:
+            if body.project_id is not None and work.projects.get(body.project_id) is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Project not found",
+                )
+            work.engineering_runs.add(run)
+            work.commit()
+
+        EngineeringOrchestrator(uow, app.state.queue).start(run.id)
+        with uow() as work:
+            stored = work.engineering_runs.get(run.id)
+            assert stored is not None
+        return EngineeringRunSummaryResponse(
+            id=stored.id,
+            project_id=stored.project_id,
+            title=stored.title,
+            objective=stored.objective,
+            status=stored.status,
+            repair_count=stored.repair_count,
+            max_repairs=stored.max_repairs,
+        )
+
+    @app.get(
+        "/engineering-runs",
+        response_model=list[EngineeringRunSummaryResponse],
+    )
+    async def list_engineering_runs() -> list[EngineeringRunSummaryResponse]:
+        with uow() as work:
+            runs = work.engineering_runs.list_all()
+        return [
+            EngineeringRunSummaryResponse(
+                id=run.id,
+                project_id=run.project_id,
+                title=run.title,
+                objective=run.objective,
+                status=run.status,
+                repair_count=run.repair_count,
+                max_repairs=run.max_repairs,
+            )
+            for run in runs
+        ]
+
+    @app.get(
+        "/engineering-runs/{engineering_run_id}",
+        response_model=EngineeringRunDetailResponse,
+    )
+    async def get_engineering_run(
+        engineering_run_id: UUID,
+    ) -> EngineeringRunDetailResponse:
+        with uow() as work:
+            run = work.engineering_runs.get(engineering_run_id)
+            if run is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Engineering run not found",
+                )
+            artifacts = work.engineering_artifacts.list_for_run(engineering_run_id)
+            checks = work.engineering_checks.list_for_run(engineering_run_id)
+        return EngineeringRunDetailResponse(
+            id=run.id,
+            project_id=run.project_id,
+            title=run.title,
+            objective=run.objective,
+            status=run.status,
+            repair_count=run.repair_count,
+            max_repairs=run.max_repairs,
+            artifacts=[
+                EngineeringArtifactResponse(
+                    id=artifact.id,
+                    stage=artifact.stage,
+                    role=artifact.role,
+                    content=artifact.content,
+                    repair_cycle=artifact.repair_cycle,
+                )
+                for artifact in artifacts
+            ],
+            checks=[
+                EngineeringCheckResponse(
+                    id=check.id,
+                    name=check.name,
+                    passed=check.passed,
+                    detail=check.detail,
+                    repair_cycle=check.repair_cycle,
+                )
+                for check in checks
+            ],
+        )
 
     @app.post(
         "/projects",
