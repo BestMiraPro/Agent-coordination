@@ -15,5 +15,64 @@ services:
     volumes:
       - agent_coordination_pg:/var/lib/postgresql/data
 
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://agent:agent@postgres:5432/agent_coordination
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    command:
+      - uvicorn
+      - services.api.app.main:app
+      - --host
+      - 0.0.0.0
+      - --port
+      - "8000"
+    environment:
+      DATABASE_URL: postgresql+psycopg://agent:agent@postgres:5432/agent_coordination
+      WEB_ORIGIN: http://localhost:3000
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.python
+    command: ["python", "-m", "services.worker.worker.main"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://agent:agent@postgres:5432/agent_coordination
+      INFERENCE_PROVIDER: ${INFERENCE_PROVIDER:-fake}
+      INFERENCE_MODEL: ${INFERENCE_MODEL:-openai/gpt-oss-20b}
+      INFERENCE_BASE_URL: ${INFERENCE_BASE_URL:-https://api.inference.wandb.ai/v1}
+      INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
+      INFERENCE_PROJECT: ${INFERENCE_PROJECT:-}
+      INFERENCE_STRUCTURED_OUTPUTS: ${INFERENCE_STRUCTURED_OUTPUTS:-true}
+      WORKER_POLL_INTERVAL_SECONDS: ${WORKER_POLL_INTERVAL_SECONDS:-0.5}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: ./apps/web
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+
 volumes:
   agent_coordination_pg:

@@ -15,6 +15,8 @@ class JobHandler(Protocol):
 async def run_once(
     queue: DurableJobQueue,
     handler: JobHandler,
+    *,
+    failure_retry_delay_seconds: int | None = None,
 ) -> bool:
     job = queue.claim_next()
     if job is None:
@@ -26,6 +28,7 @@ async def run_once(
         failed = queue.fail(
             job.id,
             error=f"{type(exc).__name__}: {exc}",
+            retry_delay=failure_retry_delay_seconds,
         )
         if failed.status == JobStatus.FAILED:
             await handler.handle_terminal_failure(job, exc)

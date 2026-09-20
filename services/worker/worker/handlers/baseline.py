@@ -18,11 +18,7 @@ from packages.core.domain.models import (
 )
 from packages.core.orchestration.baseline import BaselineOrchestrator, blind_submissions
 from packages.core.ports.repositories import UnitOfWork
-from packages.core.structured_outputs import (
-    StructuredOutputError,
-    parse_judge_output,
-    parse_researcher_output,
-)
+from packages.core.structured_outputs import parse_judge_output, parse_researcher_output
 from packages.prompts.baseline import build_judge_request, build_research_request
 from packages.providers.base import ModelProvider, ModelRequest, ModelResponse
 
@@ -82,6 +78,8 @@ class BaselineJobHandler:
             run = uow.runs.get(generation.run_id)
             if run is None:
                 raise RuntimeError("Agent run is missing")
+            if run.status.value in {"FAILED", "COMPLETED"}:
+                return
             problem = uow.problems.get(run.problem_id)
             if problem is None:
                 raise RuntimeError("Run problem is missing")
@@ -159,6 +157,8 @@ class BaselineJobHandler:
             run = uow.runs.get(generation.run_id)
             if run is None:
                 raise RuntimeError("Judge run is missing")
+            if run.status.value in {"FAILED", "COMPLETED"}:
+                return
             problem = uow.problems.get(run.problem_id)
             if problem is None:
                 raise RuntimeError("Run problem is missing")
