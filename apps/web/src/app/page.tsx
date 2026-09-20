@@ -4,6 +4,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   API_BASE_URL,
   Agent,
+  EngineeringRunDetail,
   Generation,
   KnowledgeKind,
   Lineage,
@@ -12,13 +13,16 @@ import {
   RunDetail,
   RunEvent,
   RunMetrics,
+  createEngineeringRun,
   createProblem,
   createProject,
   createRun,
+  getEngineeringRun,
   getModelStates,
   getRun,
   getRunMetrics,
   injectKnowledge,
+  listEngineeringRuns,
   listProjects,
 } from "../lib/api";
 
@@ -79,16 +83,26 @@ export default function Home() {
   const [manualKind, setManualKind] = useState<KnowledgeKind>("HYPOTHESIS");
   const [manualKnowledge, setManualKnowledge] = useState("");
   const [starting, setStarting] = useState(false);
+  const [engineeringTitle, setEngineeringTitle] = useState("Engineering task");
+  const [engineeringObjective, setEngineeringObjective] = useState("");
+  const [engineeringMaxRepairs, setEngineeringMaxRepairs] = useState(2);
+  const [engineeringProjectId, setEngineeringProjectId] = useState("");
+  const [engineeringRunId, setEngineeringRunId] = useState<string | null>(null);
+  const [engineeringRun, setEngineeringRun] = useState<EngineeringRunDetail | null>(null);
+  const [engineeringHistoryCount, setEngineeringHistoryCount] = useState(0);
+  const [engineeringStarting, setEngineeringStarting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const refreshStatic = useCallback(async () => {
     try {
-      const [projectList, modelStates] = await Promise.all([
+      const [projectList, modelStates, engineeringRuns] = await Promise.all([
         listProjects(),
         getModelStates(),
+        listEngineeringRuns(),
       ]);
       setProjects(projectList);
       setModels(modelStates);
+      setEngineeringHistoryCount(engineeringRuns.length);
     } catch {
       // The run surface still works if these dashboard calls are temporarily unavailable.
     }
@@ -110,9 +124,30 @@ export default function Home() {
     }
   }, []);
 
+  const refreshEngineeringRun = useCallback(async (id: string) => {
+    try {
+      setEngineeringRun(await getEngineeringRun(id));
+      setError(null);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not refresh engineering run.",
+      );
+    }
+  }, []);
+
   useEffect(() => {
     void refreshStatic();
   }, [refreshStatic]);
+
+  useEffect(() => {
+    if (!engineeringRunId) return;
+    void refreshEngineeringRun(engineeringRunId);
+    const timer = window.setInterval(
+      () => void refreshEngineeringRun(engineeringRunId),
+      1500,
+    );
+    return () => window.clearInterval(timer);
+  }, [engineeringRunId, refreshEngineeringRun]);
 
   useEffect(() => {
     if (!runId) return;
@@ -181,6 +216,35 @@ export default function Home() {
     }
   }
 
+  async function startEngineering(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!engineeringObjective.trim()) {
+      setError("Enter an engineering objective first.");
+      return;
+    }
+    setEngineeringStarting(true);
+    setError(null);
+    try {
+      const created = await createEngineeringRun({
+        title: engineeringTitle.trim() || "Engineering task",
+        objective: engineeringObjective.trim(),
+        projectId: engineeringProjectId || undefined,
+        maxRepairs: engineeringMaxRepairs,
+      });
+      setEngineeringRunId(created.id);
+      await Promise.all([
+        refreshEngineeringRun(created.id),
+        refreshStatic(),
+      ]);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Could not start engineering run.",
+      );
+    } finally {
+      setEngineeringStarting(false);
+    }
+  }
+
   async function addKnowledge(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!runId || !manualKnowledge.trim()) return;
@@ -228,11 +292,11 @@ export default function Home() {
             critique, verification, model routing, budgets, and the complete audit trail.
           </p>
         </div>
-        <div className="systemBadge"><span className="pulse" />Phase 9</div>
+        <div className="systemBadge"><span className="pulse" />Phases 0–10</div>
       </header>
 
       <nav className="controlNav">
-        {["overview","population","research","knowledge","candidates","verification","models","events"].map((item) => (
+        {["overview","population","research","knowledge","candidates","verification","models","engineering","events"].map((item) => (
           <a key={item} href={`#${item}`}>{item}</a>
         ))}
       </nav>
@@ -439,6 +503,127 @@ export default function Home() {
             <div className="modelGrid">
               {models.map((model) => <ModelCard key={model.id} model={model} />)}
             </div>
+          </section>
+
+          <section id="engineering" className="grid topGrid">
+            <form className="panel" onSubmit={startEngineering}>
+              <div className="panelHeading">
+                <div>
+                  <p className="kicker">Engineering factory</p>
+                  <h2>Planner → implementation → tests → review → repair</h2>
+                </div>
+                <span className="count">{engineeringHistoryCount} runs</span>
+              </div>
+              <label>
+                Task title
+                <input
+                  value={engineeringTitle}
+                  onChange={(e) => setEngineeringTitle(e.target.value)}
+                  maxLength={300}
+                />
+              </label>
+              <label>
+                Objective
+                <textarea
+                  value={engineeringObjective}
+                  onChange={(e) => setEngineeringObjective(e.target.value)}
+                  placeholder="Describe the software change or application to build..."
+                  rows={6}
+                />
+              </label>
+              <div className="engineeringConfig">
+                <label>
+                  Project
+                  <select
+                    value={engineeringProjectId}
+                    onChange={(e) => setEngineeringProjectId(e.target.value)}
+                  >
+                    <option value="">No project</option>
+                    {projects.map((project) => (
+                      <option key={project.id} value={project.id}>
+                        {project.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <NumberField
+                  label="Max repairs"
+                  value={engineeringMaxRepairs}
+                  min={0}
+                  max={5}
+                  onChange={setEngineeringMaxRepairs}
+                />
+              </div>
+              <button type="submit" disabled={engineeringStarting}>
+                {engineeringStarting ? "Starting…" : "Start engineering run"}
+              </button>
+            </form>
+
+            <section className="panel">
+              <div className="panelHeading">
+                <div>
+                  <p className="kicker">Factory state</p>
+                  <h2>{engineeringRun?.title ?? "No active engineering run"}</h2>
+                </div>
+                {engineeringRun ? (
+                  <span className={`status status-${engineeringRun.status}`}>
+                    {engineeringRun.status}
+                  </span>
+                ) : null}
+              </div>
+              {engineeringRun ? (
+                <>
+                  <p className="problemText">{engineeringRun.objective}</p>
+                  <div className="metricGrid">
+                    <Metric label="Repair cycle" value={engineeringRun.repair_count} />
+                    <Metric label="Max repairs" value={engineeringRun.max_repairs} />
+                    <Metric label="Artifacts" value={engineeringRun.artifacts.length} />
+                    <Metric label="Checks" value={engineeringRun.checks.length} />
+                    <Metric
+                      label="Passed"
+                      value={engineeringRun.checks.filter((check) => check.passed).length}
+                    />
+                    <Metric
+                      label="Failed"
+                      value={engineeringRun.checks.filter((check) => !check.passed).length}
+                    />
+                  </div>
+                  <div className="engineeringStages">
+                    {engineeringRun.artifacts.map((artifact) => (
+                      <article className="card" key={artifact.id}>
+                        <div className="cardTopline">
+                          <span>{humanize(artifact.stage)}</span>
+                          <span>cycle {artifact.repair_cycle}</span>
+                        </div>
+                        <h3>{humanize(artifact.role)}</h3>
+                        <pre>{JSON.stringify(artifact.content, null, 2)}</pre>
+                      </article>
+                    ))}
+                  </div>
+                  <div className="stack compactStack">
+                    {engineeringRun.checks.map((check) => (
+                      <article className="agentRow" key={check.id}>
+                        <div>
+                          <strong>{humanize(check.name)}</strong>
+                          <span className="lineageLabel">
+                            cycle {check.repair_cycle} · {check.detail}
+                          </span>
+                        </div>
+                        <span
+                          className={check.passed ? "status status-COMPLETED" : "status status-FAILED"}
+                        >
+                          {check.passed ? "PASS" : "FAIL"}
+                        </span>
+                      </article>
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <div className="emptyState">
+                  Engineering runs use the same durable queue, adaptive routing, and model accounting.
+                </div>
+              )}
+            </section>
           </section>
 
           <section id="events" className="grid halfGrid">

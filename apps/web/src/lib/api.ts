@@ -51,6 +51,18 @@ export type KnowledgeKind =
   | "CANDIDATE_SOLUTION";
 export type VerificationStatus = "PASSED" | "FAILED" | "INCONCLUSIVE";
 
+export type EngineeringStatus =
+  | "CREATED"
+  | "PLANNING"
+  | "IMPLEMENTING"
+  | "TESTING"
+  | "REVIEWING"
+  | "REPAIRING"
+  | "COMPLETED"
+  | "FAILED";
+
+export type EngineeringStage = "PLAN" | "IMPLEMENTATION" | "REPAIR" | "REVIEW";
+
 export type Project = { id: string; name: string; description: string };
 
 export type Claim = {
@@ -226,6 +238,37 @@ export type RunEvent = {
   created_at: string | null;
 };
 
+export type EngineeringArtifact = {
+  id: string;
+  stage: EngineeringStage;
+  role: string;
+  content: Record<string, unknown>;
+  repair_cycle: number;
+};
+
+export type EngineeringCheck = {
+  id: string;
+  name: string;
+  passed: boolean;
+  detail: string;
+  repair_cycle: number;
+};
+
+export type EngineeringRun = {
+  id: string;
+  project_id: string | null;
+  title: string;
+  objective: string;
+  status: EngineeringStatus;
+  repair_count: number;
+  max_repairs: number;
+};
+
+export type EngineeringRunDetail = EngineeringRun & {
+  artifacts: EngineeringArtifact[];
+  checks: EngineeringCheck[];
+};
+
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -324,4 +367,33 @@ export async function injectKnowledge(
       confidence: input.confidence ?? null,
     }),
   });
+}
+
+
+export async function createEngineeringRun(input: {
+  title: string;
+  objective: string;
+  projectId?: string;
+  maxRepairs: number;
+}) {
+  return request<EngineeringRun>("/engineering-runs", {
+    method: "POST",
+    body: JSON.stringify({
+      title: input.title,
+      objective: input.objective,
+      project_id: input.projectId || null,
+      max_repairs: input.maxRepairs,
+    }),
+  });
+}
+
+export async function getEngineeringRun(engineeringRunId: string) {
+  return request<EngineeringRunDetail>(
+    `/engineering-runs/${engineeringRunId}`,
+    { cache: "no-store" },
+  );
+}
+
+export async function listEngineeringRuns() {
+  return request<EngineeringRun[]>("/engineering-runs", { cache: "no-store" });
 }
