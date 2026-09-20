@@ -2,6 +2,17 @@
 
 This document turns the Phase 1 architecture into concrete work packages for coding agents.
 
+## Status
+
+- [x] Work package A — persistence foundation
+- [x] Work package B — repository interfaces + SQLAlchemy implementations
+- [x] Work package C — PostgreSQL durable job queue
+- [ ] Work package D — baseline orchestrator
+- [ ] Work package E — structured parsing
+- [ ] Work package F — API
+- [ ] Work package G — minimal web control room
+- [ ] Work package H — baseline end-to-end integration test
+
 ## Work package A — Persistence foundation
 
 Implement SQLAlchemy models and migrations for:
