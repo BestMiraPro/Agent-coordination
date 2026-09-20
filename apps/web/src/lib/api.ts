@@ -8,6 +8,12 @@ export type RunStatus =
 
 export type AgentStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED";
 
+export type MutationType =
+  | "STRENGTHEN"
+  | "FALSIFY"
+  | "REDERIVE"
+  | "GENERALIZE";
+
 export type Claim = {
   statement: string;
   confidence: number | null;
@@ -42,6 +48,22 @@ export type Evaluation = {
   critique: string;
 };
 
+export type SelectionDecision = {
+  id: string;
+  submission_id: string;
+  selected: boolean;
+  rank: number;
+  score_vector: Record<string, number | boolean>;
+  reason: string;
+};
+
+export type Lineage = {
+  id: string;
+  child_agent_id: string;
+  parent_submission_id: string;
+  mutation_type: MutationType;
+};
+
 export type Agent = {
   id: string;
   role: string;
@@ -54,11 +76,16 @@ export type Generation = {
   agents: Agent[];
   submissions: Submission[];
   evaluations: Evaluation[];
+  selections: SelectionDecision[];
+  lineages: Lineage[];
 };
 
 export type RunDetail = {
   id: string;
   status: RunStatus;
+  max_generations: number;
+  population_size: number;
+  survivor_count: number;
   problem: {
     id: string;
     title: string;
@@ -101,10 +128,29 @@ export async function createProblem(title: string, prompt: string) {
   });
 }
 
-export async function createRun(problemId: string) {
-  return request<{ id: string; problem_id: string; status: RunStatus }>("/runs", {
+export async function createRun(
+  problemId: string,
+  config: {
+    maxGenerations: number;
+    populationSize: number;
+    survivorCount: number;
+  },
+) {
+  return request<{
+    id: string;
+    problem_id: string;
+    status: RunStatus;
+    max_generations: number;
+    population_size: number;
+    survivor_count: number;
+  }>("/runs", {
     method: "POST",
-    body: JSON.stringify({ problem_id: problemId }),
+    body: JSON.stringify({
+      problem_id: problemId,
+      max_generations: config.maxGenerations,
+      population_size: config.populationSize,
+      survivor_count: config.survivorCount,
+    }),
   });
 }
 

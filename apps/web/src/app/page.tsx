@@ -3,6 +3,9 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 import {
   API_BASE_URL,
+  Agent,
+  Generation,
+  Lineage,
   RunDetail,
   RunEvent,
   createProblem,
@@ -20,6 +23,11 @@ const EVENT_TYPES = [
   "AGENT_FAILED",
   "JUDGING_STARTED",
   "EVALUATION_COMPLETED",
+  "SELECTION_COMPLETED",
+  "BRANCH_SELECTED",
+  "BRANCH_ELIMINATED",
+  "AGENT_CLONED",
+  "GENERATION_ADVANCED",
   "RUN_COMPLETED",
   "RUN_FAILED",
 ];
@@ -30,6 +38,9 @@ const pct = (value: number) => Math.round(value * 100);
 export default function Home() {
   const [title, setTitle] = useState("Research problem");
   const [prompt, setPrompt] = useState("");
+  const [maxGenerations, setMaxGenerations] = useState(3);
+  const [populationSize, setPopulationSize] = useState(4);
+  const [survivorCount, setSurvivorCount] = useState(2);
   const [runId, setRunId] = useState<string | null>(null);
   const [run, setRun] = useState<RunDetail | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
@@ -82,6 +93,10 @@ export default function Home() {
       setError("Enter a research problem first.");
       return;
     }
+    if (survivorCount >= populationSize) {
+      setError("Survivors must be fewer than the population.");
+      return;
+    }
 
     setStarting(true);
     setError(null);
@@ -89,8 +104,15 @@ export default function Home() {
     setEvents([]);
 
     try {
-      const problem = await createProblem(title.trim() || "Research problem", prompt.trim());
-      const created = await createRun(problem.id);
+      const problem = await createProblem(
+        title.trim() || "Research problem",
+        prompt.trim(),
+      );
+      const created = await createRun(problem.id, {
+        maxGenerations,
+        populationSize,
+        survivorCount,
+      });
       setRunId(created.id);
       await refreshRun(created.id);
     } catch (err) {
@@ -100,9 +122,17 @@ export default function Home() {
     }
   }
 
-  const generation = run?.generations[0] ?? null;
+  const generation = run?.generations.at(-1) ?? null;
   const researchers = generation?.agents.filter((a) => a.role.startsWith("researcher:")) ?? [];
   const judges = generation?.agents.filter((a) => a.role.startsWith("judge:")) ?? [];
+  const lineageByAgent = useMemo(() => {
+    const map = new Map<string, Lineage>();
+    for (const lineage of generation?.lineages ?? []) {
+      map.set(lineage.child_agent_id, lineage);
+    }
+    return map;
+  }, [generation]);
+
   const counts = useMemo(() => {
     const agents = generation?.agents ?? [];
     return {
@@ -118,35 +148,71 @@ export default function Home() {
       <header className="hero">
         <div>
           <p className="eyebrow">Agent Coordination</p>
-          <h1>Research control room</h1>
+          <h1>Research tournament</h1>
           <p className="lede">
-            Launch a run, watch independent researchers execute, and inspect
-            structured submissions, blind judging, and the audit trail.
+            Launch an evolutionary research run, watch independent agents compete,
+            then follow selection, cloning, mutation, and lineage across generations.
           </p>
         </div>
-        <div className="systemBadge"><span className="pulse" />Phase 1</div>
+        <div className="systemBadge"><span className="pulse" />Phase 2</div>
       </header>
 
       <section className="grid topGrid">
         <form className="panel" onSubmit={start}>
           <div className="panelHeading">
-            <div><p className="kicker">New run</p><h2>Research problem</h2></div>
+            <div><p className="kicker">New tournament</p><h2>Research problem</h2></div>
           </div>
+
           <label>
             Title
             <input value={title} onChange={(e) => setTitle(e.target.value)} maxLength={300} />
           </label>
+
           <label>
             Problem
             <textarea
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               placeholder="Describe the research problem..."
-              rows={9}
+              rows={8}
             />
           </label>
+
+          <div className="configGrid">
+            <label>
+              Generations
+              <input
+                type="number"
+                min={1}
+                max={20}
+                value={maxGenerations}
+                onChange={(e) => setMaxGenerations(Number(e.target.value))}
+              />
+            </label>
+            <label>
+              Population
+              <input
+                type="number"
+                min={2}
+                max={12}
+                value={populationSize}
+                onChange={(e) => setPopulationSize(Number(e.target.value))}
+              />
+            </label>
+            <label>
+              Survivors
+              <input
+                type="number"
+                min={1}
+                max={11}
+                value={survivorCount}
+                onChange={(e) => setSurvivorCount(Number(e.target.value))}
+              />
+            </label>
+          </div>
+
           <button type="submit" disabled={starting}>
-            {starting ? "Starting…" : "Start research run"}
+            {starting ? "Starting…" : "Start tournament"}
           </button>
           {error ? <p className="error">{error}</p> : null}
         </form>
@@ -164,39 +230,69 @@ export default function Home() {
             <>
               <p className="problemText">{run.problem.prompt}</p>
               <div className="metricGrid">
-                <Metric label="Agents" value={counts.total} />
+                <Metric label="Generation" value={(generation?.index ?? 0) + 1} suffix={`/${run.max_generations}`} />
+                <Metric label="Population" value={run.population_size} />
+                <Metric label="Survivors" value={run.survivor_count} />
                 <Metric label="Running" value={counts.running} />
-                <Metric label="Complete" value={counts.complete} />
                 <Metric label="Submissions" value={generation?.submissions.length ?? 0} />
                 <Metric label="Evaluations" value={generation?.evaluations.length ?? 0} />
-                <Metric label="Failures" value={counts.failed} />
               </div>
               <p className="runId">Run <code>{run.id}</code></p>
             </>
           ) : (
             <div className="emptyState">
               <div>
-                <p>A run will appear here when started.</p>
-                <span>4 researchers → 2 blind judges → completed run</span>
+                <p>A tournament will appear here when started.</p>
+                <span>research → judge → select → clone + mutate → next generation</span>
               </div>
             </div>
           )}
         </section>
       </section>
 
-      {run ? (
+      {run && generation ? (
         <>
+          <section className="panel generationStrip">
+            <div>
+              <p className="kicker">Tournament progress</p>
+              <h2>Generations</h2>
+            </div>
+            <div className="generationPills">
+              {run.generations.map((item) => (
+                <span
+                  key={item.id}
+                  className={item.id === generation.id ? "generationPill active" : "generationPill"}
+                >
+                  G{item.index + 1}
+                  <small>{item.submissions.length}/{run.population_size}</small>
+                </span>
+              ))}
+            </div>
+          </section>
+
           <section className="grid halfGrid">
-            <AgentPanel title="Researchers" kicker="Population" agents={researchers} empty="Researchers spawn when the run starts." />
-            <AgentPanel title="Blind judges" kicker="Evaluation" agents={judges} empty="Judges spawn after research completes." />
+            <AgentPanel
+              title="Researchers"
+              kicker={`Generation ${generation.index + 1}`}
+              agents={researchers}
+              lineageByAgent={lineageByAgent}
+              empty="Researchers spawn when the generation starts."
+            />
+            <AgentPanel
+              title="Blind judges"
+              kicker="Evaluation"
+              agents={judges}
+              lineageByAgent={new Map()}
+              empty="Judges spawn after all research branches finish."
+            />
           </section>
 
           <section className="panel">
             <div className="panelHeading">
-              <div><p className="kicker">Research artifacts</p><h2>Submissions</h2></div>
-              <span className="count">{generation?.submissions.length ?? 0}</span>
+              <div><p className="kicker">Research artifacts</p><h2>Current submissions</h2></div>
+              <span className="count">{generation.submissions.length}</span>
             </div>
-            {generation?.submissions.length ? (
+            {generation.submissions.length ? (
               <div className="submissionGrid">
                 {generation.submissions.map((submission, index) => (
                   <article className="card" key={submission.id}>
@@ -223,14 +319,26 @@ export default function Home() {
             ) : <p className="muted">Structured submissions appear as researchers finish.</p>}
           </section>
 
+          <section className="panel">
+            <div className="panelHeading">
+              <div><p className="kicker">Evolution</p><h2>Selection & lineage history</h2></div>
+              <span className="count">{run.generations.length}</span>
+            </div>
+            <div className="evolutionGrid">
+              {run.generations.map((item) => (
+                <GenerationHistory key={item.id} generation={item} />
+              ))}
+            </div>
+          </section>
+
           <section className="grid halfGrid">
             <section className="panel">
               <div className="panelHeading">
-                <div><p className="kicker">Scoring</p><h2>Evaluations</h2></div>
-                <span className="count">{generation?.evaluations.length ?? 0}</span>
+                <div><p className="kicker">Scoring</p><h2>Current evaluations</h2></div>
+                <span className="count">{generation.evaluations.length}</span>
               </div>
               <div className="stack">
-                {generation?.evaluations.length ? generation.evaluations.map((evaluation) => (
+                {generation.evaluations.length ? generation.evaluations.map((evaluation) => (
                   <article className="card" key={evaluation.id}>
                     <div className="cardTopline">
                       <span>Submission {shortId(evaluation.submission_id)}</span>
@@ -276,8 +384,16 @@ export default function Home() {
   );
 }
 
-function Metric({ label, value }: { label: string; value: number }) {
-  return <div className="metric"><span>{label}</span><strong>{value}</strong></div>;
+function Metric({
+  label,
+  value,
+  suffix = "",
+}: {
+  label: string;
+  value: number;
+  suffix?: string;
+}) {
+  return <div className="metric"><span>{label}</span><strong>{value}{suffix}</strong></div>;
 }
 
 function Score({ label, value }: { label: string; value: number }) {
@@ -288,11 +404,13 @@ function AgentPanel({
   title,
   kicker,
   agents,
+  lineageByAgent,
   empty,
 }: {
   title: string;
   kicker: string;
-  agents: { id: string; role: string; status: string }[];
+  agents: Agent[];
+  lineageByAgent: Map<string, Lineage>;
   empty: string;
 }) {
   return (
@@ -303,14 +421,67 @@ function AgentPanel({
       </div>
       {agents.length ? (
         <div className="stack">
-          {agents.map((agent) => (
-            <article className="agentRow" key={agent.id}>
-              <div><strong>{agent.role}</strong><code>{shortId(agent.id)}</code></div>
-              <span className={`status status-${agent.status}`}>{agent.status}</span>
-            </article>
-          ))}
+          {agents.map((agent) => {
+            const lineage = lineageByAgent.get(agent.id);
+            return (
+              <article className="agentRow" key={agent.id}>
+                <div>
+                  <strong>{agent.role}</strong>
+                  <code>{shortId(agent.id)}</code>
+                  {lineage ? (
+                    <span className="lineageLabel">
+                      {lineage.mutation_type.toLowerCase()} from {shortId(lineage.parent_submission_id)}
+                    </span>
+                  ) : null}
+                </div>
+                <span className={`status status-${agent.status}`}>{agent.status}</span>
+              </article>
+            );
+          })}
         </div>
       ) : <p className="muted">{empty}</p>}
     </section>
+  );
+}
+
+function GenerationHistory({ generation }: { generation: Generation }) {
+  const selected = generation.selections.filter((item) => item.selected);
+  const eliminated = generation.selections.filter((item) => !item.selected);
+
+  return (
+    <article className="generationHistory">
+      <div className="cardTopline">
+        <strong>Generation {generation.index + 1}</strong>
+        <span>{generation.submissions.length} submissions</span>
+      </div>
+      {generation.selections.length ? (
+        <>
+          <p>
+            <b>{selected.length}</b> selected · <b>{eliminated.length}</b> eliminated
+          </p>
+          <div className="selectionList">
+            {generation.selections.map((decision) => (
+              <span
+                key={decision.id}
+                className={decision.selected ? "selection selected" : "selection eliminated"}
+              >
+                #{decision.rank} {shortId(decision.submission_id)}
+              </span>
+            ))}
+          </div>
+        </>
+      ) : (
+        <p className="muted">Selection pending or final generation.</p>
+      )}
+      {generation.lineages.length ? (
+        <div className="chips">
+          {generation.lineages.map((lineage) => (
+            <span key={lineage.id}>
+              {lineage.mutation_type.toLowerCase()} ← {shortId(lineage.parent_submission_id)}
+            </span>
+          ))}
+        </div>
+      ) : null}
+    </article>
   );
 }

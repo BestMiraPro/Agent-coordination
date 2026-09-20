@@ -92,3 +92,98 @@ code { color:#b6bdc9; font-family:"SFMono-Regular",Consolas,monospace; font-size
   .panel { padding:16px; border-radius:14px; }
   .metricGrid,.scoreGrid { grid-template-columns:repeat(2,1fr); }
 }
+
+.configGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+.generationStrip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.generationPills {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.generationPill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 7px 10px;
+  color: var(--muted);
+  background: rgba(255,255,255,.03);
+  font-size: .74rem;
+  font-weight: 800;
+}
+.generationPill small {
+  font-size: .65rem;
+  opacity: .7;
+}
+.generationPill.active {
+  color: var(--accent);
+  border-color: rgba(133,242,199,.28);
+  background: rgba(133,242,199,.08);
+}
+.lineageLabel {
+  display: block;
+  margin-top: 5px;
+  color: var(--warning);
+  font-size: .68rem;
+  text-transform: capitalize;
+}
+.evolutionGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+}
+.generationHistory {
+  padding: 15px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255,255,255,.02);
+}
+.generationHistory p {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: .82rem;
+}
+.selectionList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.selection {
+  border-radius: 999px;
+  padding: 5px 8px;
+  font-size: .67rem;
+  font-weight: 800;
+}
+.selection.selected {
+  color: var(--accent);
+  background: rgba(133,242,199,.1);
+}
+.selection.eliminated {
+  color: var(--muted);
+  background: rgba(255,255,255,.045);
+  text-decoration: line-through;
+}
+@media (max-width: 700px) {
+  .configGrid {
+    grid-template-columns: 1fr;
+  }
+  .generationStrip {
+    display: block;
+  }
+  .generationPills {
+    justify-content: flex-start;
+    margin-top: 14px;
+  }
+}
