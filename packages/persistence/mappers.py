@@ -10,6 +10,9 @@ from packages.core.domain.models import (
     Job,
     JobStatus,
     JobType,
+    KnowledgeItem,
+    KnowledgeKind,
+    KnowledgeStatus,
     LineageLink,
     ModelCall,
     ModelCallStatus,
@@ -29,6 +32,7 @@ from packages.persistence.models import (
     EvaluationRecord,
     GenerationRecord,
     JobRecord,
+    KnowledgeItemRecord,
     LineageLinkRecord,
     ModelCallRecord,
     ModelProfileRecord,
@@ -125,6 +129,20 @@ def lineage_from_record(record: LineageLinkRecord) -> LineageLink:
         child_agent_id=record.child_agent_id,
         parent_submission_id=record.parent_submission_id,
         mutation_type=MutationType(record.mutation_type),
+    )
+
+
+def knowledge_from_record(record: KnowledgeItemRecord) -> KnowledgeItem:
+    return KnowledgeItem(
+        id=record.id,
+        run_id=record.run_id,
+        generation_id=record.generation_id,
+        submission_id=record.submission_id,
+        kind=KnowledgeKind(record.kind),
+        content=record.content,
+        status=KnowledgeStatus(record.status),
+        confidence=record.confidence,
+        provenance=dict(record.provenance),
     )
 
 

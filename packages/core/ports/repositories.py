@@ -11,6 +11,7 @@ from packages.core.domain.models import (
     Generation,
     Job,
     JobType,
+    KnowledgeItem,
     LineageLink,
     ModelCall,
     ModelProfile,
@@ -72,6 +73,12 @@ class LineageRepository(Protocol):
     def list_for_generation(self, generation_id: UUID) -> list[LineageLink]: ...
 
 
+class KnowledgeRepository(Protocol):
+    def add_many(self, items: Iterable[KnowledgeItem]) -> list[KnowledgeItem]: ...
+    def list_for_run(self, run_id: UUID) -> list[KnowledgeItem]: ...
+    def list_for_generation(self, generation_id: UUID) -> list[KnowledgeItem]: ...
+
+
 class ModelProfileRepository(Protocol):
     def add(self, profile: ModelProfile) -> ModelProfile: ...
     def get(self, profile_id: UUID) -> ModelProfile | None: ...
@@ -107,6 +114,7 @@ class UnitOfWork(Protocol):
     evaluations: EvaluationRepository
     selections: SelectionRepository
     lineages: LineageRepository
+    knowledge: KnowledgeRepository
     model_profiles: ModelProfileRepository
     model_calls: ModelCallRepository
     events: RunEventRepository

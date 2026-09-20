@@ -57,6 +57,26 @@ class SelectionKind(StrEnum):
     ELIMINATED = "ELIMINATED"
 
 
+class KnowledgeKind(StrEnum):
+    VERIFIED_FACT = "VERIFIED_FACT"
+    LIKELY_FACT = "LIKELY_FACT"
+    HYPOTHESIS = "HYPOTHESIS"
+    CANDIDATE_LEMMA = "CANDIDATE_LEMMA"
+    COUNTEREXAMPLE = "COUNTEREXAMPLE"
+    CONTRADICTION = "CONTRADICTION"
+    FAILED_APPROACH = "FAILED_APPROACH"
+    PROMISING_APPROACH = "PROMISING_APPROACH"
+    UNRESOLVED_QUESTION = "UNRESOLVED_QUESTION"
+    OBSERVATION = "OBSERVATION"
+    CANDIDATE_SOLUTION = "CANDIDATE_SOLUTION"
+
+
+class KnowledgeStatus(StrEnum):
+    ACTIVE = "ACTIVE"
+    VERIFIED = "VERIFIED"
+    REFUTED = "REFUTED"
+
+
 class JobType(StrEnum):
     CREATE_GENERATION = "create_generation"
     RUN_RESEARCH_AGENT = "run_research_agent"
@@ -98,6 +118,8 @@ class RunEventType(StrEnum):
     WILDCARD_SELECTED = "WILDCARD_SELECTED"
     AGENT_CLONED = "AGENT_CLONED"
     FRESH_AGENT_INJECTED = "FRESH_AGENT_INJECTED"
+    KNOWLEDGE_CREATED = "KNOWLEDGE_CREATED"
+    KNOWLEDGE_COMPACTED = "KNOWLEDGE_COMPACTED"
     GENERATION_ADVANCED = "GENERATION_ADVANCED"
     RUN_COMPLETED = "RUN_COMPLETED"
     RUN_FAILED = "RUN_FAILED"
@@ -195,6 +217,19 @@ class LineageLink:
     child_agent_id: UUID
     parent_submission_id: UUID
     mutation_type: MutationType
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass(slots=True)
+class KnowledgeItem:
+    run_id: UUID
+    generation_id: UUID
+    submission_id: UUID | None
+    kind: KnowledgeKind
+    content: str
+    status: KnowledgeStatus = KnowledgeStatus.ACTIVE
+    confidence: float | None = None
+    provenance: dict[str, Any] = field(default_factory=dict)
     id: UUID = field(default_factory=uuid4)
 
 

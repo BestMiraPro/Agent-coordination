@@ -27,6 +27,7 @@ from packages.core.domain.models import (
     AgentOrigin,
     AgentStatus,
     JobStatus,
+    KnowledgeStatus,
     ModelCallStatus,
     ResearchNiche,
     RunStatus,
@@ -213,6 +214,35 @@ class LineageLinkRecord(TimestampMixin, Base):
         PGUUID(as_uuid=True), ForeignKey("submissions.id", ondelete="CASCADE"), nullable=False, index=True
     )
     mutation_type: Mapped[str] = mapped_column(String(32), nullable=False)
+
+
+class KnowledgeItemRecord(TimestampMixin, Base):
+    __tablename__ = "knowledge_items"
+    __table_args__ = (
+        Index("ix_knowledge_items_run_kind", "run_id", "kind"),
+    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    run_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("runs.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    generation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("generations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    submission_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("submissions.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default=KnowledgeStatus.ACTIVE.value,
+        server_default=KnowledgeStatus.ACTIVE.value,
+    )
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    provenance: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
 
 
 class ModelProfileRecord(TimestampMixin, Base):

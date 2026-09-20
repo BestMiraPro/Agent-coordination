@@ -13,6 +13,7 @@ from packages.core.domain.models import (
     AgentStatus,
     Evaluation,
     Generation,
+    KnowledgeItem,
     LineageLink,
     ModelCall,
     ModelProfile,
@@ -28,6 +29,7 @@ from packages.persistence.mappers import (
     agent_from_record,
     evaluation_from_record,
     generation_from_record,
+    knowledge_from_record,
     lineage_from_record,
     model_call_from_record,
     model_profile_from_record,
@@ -41,6 +43,7 @@ from packages.persistence.models import (
     AgentRecord,
     EvaluationRecord,
     GenerationRecord,
+    KnowledgeItemRecord,
     LineageLinkRecord,
     ModelCallRecord,
     ModelProfileRecord,
@@ -339,6 +342,46 @@ class LineageSqlRepository:
         return [lineage_from_record(record) for record in records]
 
 
+class KnowledgeSqlRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add_many(self, items: Iterable[KnowledgeItem]) -> list[KnowledgeItem]:
+        records = [
+            KnowledgeItemRecord(
+                id=item.id,
+                run_id=item.run_id,
+                generation_id=item.generation_id,
+                submission_id=item.submission_id,
+                kind=item.kind.value,
+                content=item.content,
+                status=item.status.value,
+                confidence=item.confidence,
+                provenance=item.provenance,
+            )
+            for item in items
+        ]
+        self.session.add_all(records)
+        self.session.flush()
+        return [knowledge_from_record(record) for record in records]
+
+    def list_for_run(self, run_id: UUID) -> list[KnowledgeItem]:
+        records = self.session.execute(
+            select(KnowledgeItemRecord)
+            .where(KnowledgeItemRecord.run_id == run_id)
+            .order_by(KnowledgeItemRecord.created_at, KnowledgeItemRecord.id)
+        ).scalars()
+        return [knowledge_from_record(record) for record in records]
+
+    def list_for_generation(self, generation_id: UUID) -> list[KnowledgeItem]:
+        records = self.session.execute(
+            select(KnowledgeItemRecord)
+            .where(KnowledgeItemRecord.generation_id == generation_id)
+            .order_by(KnowledgeItemRecord.created_at, KnowledgeItemRecord.id)
+        ).scalars()
+        return [knowledge_from_record(record) for record in records]
+
+
 class ModelProfileSqlRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -447,6 +490,7 @@ class SqlAlchemyUnitOfWork:
         self.evaluations = EvaluationSqlRepository(self.session)
         self.selections = SelectionSqlRepository(self.session)
         self.lineages = LineageSqlRepository(self.session)
+        self.knowledge = KnowledgeSqlRepository(self.session)
         self.model_profiles = ModelProfileSqlRepository(self.session)
         self.model_calls = ModelCallSqlRepository(self.session)
         self.events = RunEventSqlRepository(self.session)
