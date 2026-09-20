@@ -7,6 +7,8 @@ from packages.core.domain.models import (
     Agent,
     AgentOrigin,
     AgentStatus,
+    CrossPollinationKind,
+    CrossPollinationPacket,
     Generation,
     JobType,
     LineageLink,
@@ -443,6 +445,7 @@ class TournamentOrchestrator:
                     researchers = uow.agents.add_many(children)
 
                     lineage_links: list[LineageLink] = []
+                    cross_packets: list[CrossPollinationPacket] = []
                     for index, child in enumerate(researchers):
                         uow.events.append(
                             RunEvent(
@@ -480,6 +483,47 @@ class TournamentOrchestrator:
                                 mutation_type=mutation,
                             )
                         )
+
+                        if len(selected) > 1:
+                            source = selected[(index + 1) % len(selected)]
+                            if source.submission_id != parent.submission_id:
+                                source_submission = uow.submissions.get(source.submission_id)
+                                if source_submission is not None:
+                                    packet_kind = (
+                                        CrossPollinationKind.TRY
+                                        if source.selection_kind
+                                        in {SelectionKind.NOVELTY, SelectionKind.WILDCARD}
+                                        else CrossPollinationKind.PROMISING
+                                    )
+                                    packet = CrossPollinationPacket(
+                                        run_id=run_id,
+                                        generation_id=next_generation.id,
+                                        target_agent_id=child.id,
+                                        source_submission_id=source_submission.id,
+                                        kind=packet_kind,
+                                        payload={
+                                            "summary": source_submission.summary,
+                                            "approach": source_submission.approach,
+                                            "discoveries": source_submission.discoveries[:3],
+                                            "open_questions": source_submission.open_questions[:3],
+                                        },
+                                    )
+                                    cross_packets.append(packet)
+                                    uow.events.append(
+                                        RunEvent(
+                                            run_id=run_id,
+                                            event_type=RunEventType.CROSS_POLLINATION_CREATED.value,
+                                            payload={
+                                                "packet_id": str(packet.id),
+                                                "target_agent_id": str(child.id),
+                                                "source_submission_id": str(
+                                                    source_submission.id
+                                                ),
+                                                "kind": packet_kind.value,
+                                                "generation_id": str(next_generation.id),
+                                            },
+                                        )
+                                    )
                         uow.events.append(
                             RunEvent(
                                 run_id=run_id,
@@ -495,6 +539,8 @@ class TournamentOrchestrator:
                         )
                     if lineage_links:
                         uow.lineages.add_many(lineage_links)
+                    if cross_packets:
+                        uow.cross_pollination.add_many(cross_packets)
 
                 uow.runs.update_status(run_id, RunStatus.RESEARCHING)
                 uow.events.append(

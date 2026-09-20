@@ -24,6 +24,7 @@ from packages.persistence.repositories import SqlAlchemyUnitOfWork
 from services.api.app.schemas import (
     AgentResponse,
     ClaimResponse,
+    CrossPollinationResponse,
     EvaluationResponse,
     GenerationResponse,
     ProblemCreate,
@@ -172,6 +173,7 @@ def create_app(
                 evaluations = work.evaluations.list_for_generation(generation.id)
                 selections = work.selections.list_for_generation(generation.id)
                 lineages = work.lineages.list_for_generation(generation.id)
+                cross_pollination = work.cross_pollination.list_for_generation(generation.id)
                 knowledge = work.knowledge.list_for_generation(generation.id)
 
                 generations.append(
@@ -251,6 +253,16 @@ def create_app(
                                 mutation_type=lineage.mutation_type,
                             )
                             for lineage in lineages
+                        ],
+                        cross_pollination=[
+                            CrossPollinationResponse(
+                                id=packet.id,
+                                target_agent_id=packet.target_agent_id,
+                                source_submission_id=packet.source_submission_id,
+                                kind=packet.kind,
+                                payload=packet.payload,
+                            )
+                            for packet in cross_pollination
                         ],
                         knowledge=[
                             KnowledgeResponse(

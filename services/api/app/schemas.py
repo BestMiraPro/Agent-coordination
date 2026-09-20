@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from packages.core.domain.models import (
     AgentOrigin,
     AgentStatus,
+    CrossPollinationKind,
     KnowledgeKind,
     KnowledgeStatus,
     MutationType,
@@ -113,6 +114,14 @@ class LineageResponse(BaseModel):
     mutation_type: MutationType
 
 
+class CrossPollinationResponse(BaseModel):
+    id: UUID
+    target_agent_id: UUID
+    source_submission_id: UUID
+    kind: CrossPollinationKind
+    payload: dict[str, Any]
+
+
 class KnowledgeResponse(BaseModel):
     id: UUID
     generation_id: UUID
@@ -140,6 +149,7 @@ class GenerationResponse(BaseModel):
     evaluations: list[EvaluationResponse]
     selections: list[SelectionResponse]
     lineages: list[LineageResponse]
+    cross_pollination: list[CrossPollinationResponse]
     knowledge: list[KnowledgeResponse]
 
 

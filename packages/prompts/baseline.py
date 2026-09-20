@@ -92,6 +92,7 @@ def build_research_request(
     parent_submission: Submission | None = None,
     mutation_type: MutationType | None = None,
     memory_context: list[dict[str, object]] | None = None,
+    cross_pollination: list[dict[str, object]] | None = None,
 ) -> ModelRequest:
     schema = ResearcherOutput.model_json_schema()
     metadata: dict[str, object] = {
@@ -108,6 +109,8 @@ def build_research_request(
     }
     if memory_context:
         task["research_memory"] = memory_context
+    if cross_pollination:
+        task["cross_pollination"] = cross_pollination
 
     if parent_submission is None:
         if origin == AgentOrigin.FRESH:

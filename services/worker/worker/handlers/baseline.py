@@ -150,6 +150,14 @@ class BaselineJobHandler:
                 )
             if lineage is not None and parent_submission is None:
                 raise RuntimeError("Lineage parent submission is missing")
+            cross_pollination = [
+                {
+                    "kind": packet.kind.value,
+                    "source_submission_id": str(packet.source_submission_id),
+                    "payload": packet.payload,
+                }
+                for packet in uow.cross_pollination.list_for_agent(agent_id)
+            ]
 
             uow.agents.update_status(agent_id, AgentStatus.RUNNING)
             uow.events.append(
@@ -174,6 +182,7 @@ class BaselineJobHandler:
             parent_submission=parent_submission,
             mutation_type=lineage.mutation_type if lineage is not None else None,
             memory_context=memory_context,
+            cross_pollination=cross_pollination,
         )
         response: ModelResponse | None = None
         try:
