@@ -52,6 +52,9 @@ class GenerationSqlRepository:
     def add(self, generation: Generation) -> Generation:
         record = GenerationRecord(id=generation.id, run_id=generation.run_id, index=generation.index)
         self.session.add(record); self.session.flush(); return generation_from_record(record)
+    def get(self, generation_id: UUID) -> Generation | None:
+        record = self.session.get(GenerationRecord, generation_id)
+        return generation_from_record(record) if record else None
     def get_for_run(self, run_id: UUID, index: int) -> Generation | None:
         record = self.session.execute(select(GenerationRecord).where(GenerationRecord.run_id == run_id, GenerationRecord.index == index)).scalar_one_or_none()
         return generation_from_record(record) if record else None
@@ -90,6 +93,11 @@ class SubmissionSqlRepository:
         self.session.add(record); self.session.flush(); return submission_from_record(record)
     def get(self, submission_id: UUID) -> Submission | None:
         record = self.session.get(SubmissionRecord, submission_id); return submission_from_record(record) if record else None
+    def get_for_agent(self, agent_id: UUID) -> Submission | None:
+        record = self.session.execute(
+            select(SubmissionRecord).where(SubmissionRecord.agent_id == agent_id)
+        ).scalar_one_or_none()
+        return submission_from_record(record) if record else None
     def list_for_generation(self, generation_id: UUID) -> list[Submission]:
         records = self.session.execute(
             select(SubmissionRecord).join(AgentRecord, SubmissionRecord.agent_id == AgentRecord.id)
@@ -159,14 +167,9 @@ class RunEventSqlRepository:
             if anchor is not None:
                 query = query.where(
                     (RunEventRecord.created_at > anchor.created_at)
-                    | (
-                        (RunEventRecord.created_at == anchor.created_at)
-                        & (RunEventRecord.id > anchor.id)
-                    )
+                    | ((RunEventRecord.created_at == anchor.created_at) & (RunEventRecord.id > anchor.id))
                 )
-        records = self.session.execute(
-            query.order_by(RunEventRecord.created_at, RunEventRecord.id)
-        ).scalars()
+        records = self.session.execute(query.order_by(RunEventRecord.created_at, RunEventRecord.id)).scalars()
         return [run_event_from_record(record) for record in records]
 
 
