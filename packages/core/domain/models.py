@@ -24,6 +24,13 @@ class AgentStatus(StrEnum):
     FAILED = "FAILED"
 
 
+class MutationType(StrEnum):
+    STRENGTHEN = "STRENGTHEN"
+    FALSIFY = "FALSIFY"
+    REDERIVE = "REDERIVE"
+    GENERALIZE = "GENERALIZE"
+
+
 class JobType(StrEnum):
     CREATE_GENERATION = "create_generation"
     RUN_RESEARCH_AGENT = "run_research_agent"
@@ -57,6 +64,11 @@ class RunEventType(StrEnum):
     AGENT_FAILED = "AGENT_FAILED"
     JUDGING_STARTED = "JUDGING_STARTED"
     EVALUATION_COMPLETED = "EVALUATION_COMPLETED"
+    SELECTION_COMPLETED = "SELECTION_COMPLETED"
+    BRANCH_SELECTED = "BRANCH_SELECTED"
+    BRANCH_ELIMINATED = "BRANCH_ELIMINATED"
+    AGENT_CLONED = "AGENT_CLONED"
+    GENERATION_ADVANCED = "GENERATION_ADVANCED"
     RUN_COMPLETED = "RUN_COMPLETED"
     RUN_FAILED = "RUN_FAILED"
 
@@ -72,6 +84,9 @@ class Problem:
 class Run:
     problem_id: UUID
     status: RunStatus = RunStatus.CREATED
+    max_generations: int = 1
+    population_size: int = 4
+    survivor_count: int = 2
     id: UUID = field(default_factory=uuid4)
 
 
@@ -124,6 +139,25 @@ class Evaluation:
     fatal_error: bool
     judge_confidence: float
     critique: str
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass(slots=True)
+class SelectionDecision:
+    generation_id: UUID
+    submission_id: UUID
+    selected: bool
+    rank: int
+    score_vector: dict[str, float | bool]
+    reason: str
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass(slots=True)
+class LineageLink:
+    child_agent_id: UUID
+    parent_submission_id: UUID
+    mutation_type: MutationType
     id: UUID = field(default_factory=uuid4)
 
 

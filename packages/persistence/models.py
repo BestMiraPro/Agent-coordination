@@ -48,6 +48,12 @@ class ProblemRecord(TimestampMixin, Base):
 
 class RunRecord(TimestampMixin, Base):
     __tablename__ = "runs"
+    __table_args__ = (
+        CheckConstraint("max_generations > 0", name="ck_run_max_generations_positive"),
+        CheckConstraint("population_size > 1", name="ck_run_population_size"),
+        CheckConstraint("survivor_count > 0", name="ck_run_survivor_count_positive"),
+        CheckConstraint("survivor_count < population_size", name="ck_run_survivors_lt_population"),
+    )
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     problem_id: Mapped[UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("problems.id", ondelete="CASCADE"), nullable=False, index=True
@@ -55,6 +61,9 @@ class RunRecord(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(
         String(32), nullable=False, default=RunStatus.CREATED.value, server_default=RunStatus.CREATED.value
     )
+    max_generations: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default="1")
+    population_size: Mapped[int] = mapped_column(Integer, nullable=False, default=4, server_default="4")
+    survivor_count: Mapped[int] = mapped_column(Integer, nullable=False, default=2, server_default="2")
 
 
 class GenerationRecord(TimestampMixin, Base):
@@ -123,6 +132,42 @@ class EvaluationRecord(TimestampMixin, Base):
     fatal_error: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     judge_confidence: Mapped[float] = mapped_column(Float, nullable=False)
     critique: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class SelectionDecisionRecord(TimestampMixin, Base):
+    __tablename__ = "selection_decisions"
+    __table_args__ = (
+        UniqueConstraint("generation_id", "submission_id", name="uq_selection_generation_submission"),
+        CheckConstraint("rank > 0", name="ck_selection_rank_positive"),
+    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    generation_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("generations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    submission_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("submissions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    selected: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    rank: Mapped[int] = mapped_column(Integer, nullable=False)
+    score_vector: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, nullable=False, default=dict, server_default=text("'{}'::jsonb")
+    )
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+
+
+class LineageLinkRecord(TimestampMixin, Base):
+    __tablename__ = "lineage_links"
+    __table_args__ = (
+        UniqueConstraint("child_agent_id", name="uq_lineage_child_agent"),
+    )
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    child_agent_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    parent_submission_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("submissions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    mutation_type: Mapped[str] = mapped_column(String(32), nullable=False)
 
 
 class ModelProfileRecord(TimestampMixin, Base):

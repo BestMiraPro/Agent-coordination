@@ -6,7 +6,12 @@ from packages.core.domain.models import RunStatus
 _ALLOWED_TRANSITIONS: dict[RunStatus, set[RunStatus]] = {
     RunStatus.CREATED: {RunStatus.RESEARCHING, RunStatus.PAUSED, RunStatus.FAILED},
     RunStatus.RESEARCHING: {RunStatus.JUDGING, RunStatus.PAUSED, RunStatus.FAILED},
-    RunStatus.JUDGING: {RunStatus.COMPLETED, RunStatus.PAUSED, RunStatus.FAILED},
+    RunStatus.JUDGING: {
+        RunStatus.RESEARCHING,
+        RunStatus.COMPLETED,
+        RunStatus.PAUSED,
+        RunStatus.FAILED,
+    },
     RunStatus.PAUSED: {
         RunStatus.RESEARCHING,
         RunStatus.JUDGING,
