@@ -156,8 +156,17 @@ class RunEventSqlRepository:
         query = select(RunEventRecord).where(RunEventRecord.run_id == run_id)
         if after_id is not None:
             anchor = self.session.get(RunEventRecord, after_id)
-            if anchor is not None: query = query.where(RunEventRecord.created_at > anchor.created_at)
-        records = self.session.execute(query.order_by(RunEventRecord.created_at, RunEventRecord.id)).scalars()
+            if anchor is not None:
+                query = query.where(
+                    (RunEventRecord.created_at > anchor.created_at)
+                    | (
+                        (RunEventRecord.created_at == anchor.created_at)
+                        & (RunEventRecord.id > anchor.id)
+                    )
+                )
+        records = self.session.execute(
+            query.order_by(RunEventRecord.created_at, RunEventRecord.id)
+        ).scalars()
         return [run_event_from_record(record) for record in records]
 
 
