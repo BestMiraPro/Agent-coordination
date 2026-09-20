@@ -11,12 +11,14 @@ from packages.core.domain.models import (
     Generation,
     Job,
     JobType,
+    LineageLink,
     ModelCall,
     ModelProfile,
     Problem,
     Run,
     RunEvent,
     RunStatus,
+    SelectionDecision,
     Submission,
 )
 
@@ -59,6 +61,17 @@ class EvaluationRepository(Protocol):
     def list_for_generation(self, generation_id: UUID) -> list[Evaluation]: ...
 
 
+class SelectionRepository(Protocol):
+    def add_many(self, decisions: Iterable[SelectionDecision]) -> list[SelectionDecision]: ...
+    def list_for_generation(self, generation_id: UUID) -> list[SelectionDecision]: ...
+
+
+class LineageRepository(Protocol):
+    def add_many(self, links: Iterable[LineageLink]) -> list[LineageLink]: ...
+    def get_for_child(self, child_agent_id: UUID) -> LineageLink | None: ...
+    def list_for_generation(self, generation_id: UUID) -> list[LineageLink]: ...
+
+
 class ModelProfileRepository(Protocol):
     def add(self, profile: ModelProfile) -> ModelProfile: ...
     def get(self, profile_id: UUID) -> ModelProfile | None: ...
@@ -92,6 +105,8 @@ class UnitOfWork(Protocol):
     agents: AgentRepository
     submissions: SubmissionRepository
     evaluations: EvaluationRepository
+    selections: SelectionRepository
+    lineages: LineageRepository
     model_profiles: ModelProfileRepository
     model_calls: ModelCallRepository
     events: RunEventRepository

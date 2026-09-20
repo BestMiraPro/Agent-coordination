@@ -1,12 +1,39 @@
 from __future__ import annotations
 
 from packages.core.domain.models import (
-    Agent, AgentStatus, ClaimDraft, Evaluation, Generation, Job, JobStatus, JobType,
-    ModelCall, ModelCallStatus, ModelProfile, Problem, Run, RunEvent, RunStatus, Submission,
+    Agent,
+    AgentStatus,
+    ClaimDraft,
+    Evaluation,
+    Generation,
+    Job,
+    JobStatus,
+    JobType,
+    LineageLink,
+    ModelCall,
+    ModelCallStatus,
+    ModelProfile,
+    MutationType,
+    Problem,
+    Run,
+    RunEvent,
+    RunStatus,
+    SelectionDecision,
+    Submission,
 )
 from packages.persistence.models import (
-    AgentRecord, EvaluationRecord, GenerationRecord, JobRecord, ModelCallRecord,
-    ModelProfileRecord, ProblemRecord, RunEventRecord, RunRecord, SubmissionRecord,
+    AgentRecord,
+    EvaluationRecord,
+    GenerationRecord,
+    JobRecord,
+    LineageLinkRecord,
+    ModelCallRecord,
+    ModelProfileRecord,
+    ProblemRecord,
+    RunEventRecord,
+    RunRecord,
+    SelectionDecisionRecord,
+    SubmissionRecord,
 )
 
 
@@ -15,7 +42,14 @@ def problem_from_record(record: ProblemRecord) -> Problem:
 
 
 def run_from_record(record: RunRecord) -> Run:
-    return Run(id=record.id, problem_id=record.problem_id, status=RunStatus(record.status))
+    return Run(
+        id=record.id,
+        problem_id=record.problem_id,
+        status=RunStatus(record.status),
+        max_generations=record.max_generations,
+        population_size=record.population_size,
+        survivor_count=record.survivor_count,
+    )
 
 
 def generation_from_record(record: GenerationRecord) -> Generation:
@@ -23,7 +57,12 @@ def generation_from_record(record: GenerationRecord) -> Generation:
 
 
 def agent_from_record(record: AgentRecord) -> Agent:
-    return Agent(id=record.id, generation_id=record.generation_id, role=record.role, status=AgentStatus(record.status))
+    return Agent(
+        id=record.id,
+        generation_id=record.generation_id,
+        role=record.role,
+        status=AgentStatus(record.status),
+    )
 
 
 def submission_from_record(record: SubmissionRecord) -> Submission:
@@ -58,8 +97,35 @@ def evaluation_from_record(record: EvaluationRecord) -> Evaluation:
     )
 
 
+def selection_from_record(record: SelectionDecisionRecord) -> SelectionDecision:
+    return SelectionDecision(
+        id=record.id,
+        generation_id=record.generation_id,
+        submission_id=record.submission_id,
+        selected=record.selected,
+        rank=record.rank,
+        score_vector=dict(record.score_vector),
+        reason=record.reason,
+    )
+
+
+def lineage_from_record(record: LineageLinkRecord) -> LineageLink:
+    return LineageLink(
+        id=record.id,
+        child_agent_id=record.child_agent_id,
+        parent_submission_id=record.parent_submission_id,
+        mutation_type=MutationType(record.mutation_type),
+    )
+
+
 def model_profile_from_record(record: ModelProfileRecord) -> ModelProfile:
-    return ModelProfile(id=record.id, provider=record.provider, model=record.model, enabled=record.enabled, metadata=dict(record.profile_metadata))
+    return ModelProfile(
+        id=record.id,
+        provider=record.provider,
+        model=record.model,
+        enabled=record.enabled,
+        metadata=dict(record.profile_metadata),
+    )
 
 
 def model_call_from_record(record: ModelCallRecord) -> ModelCall:
@@ -100,4 +166,10 @@ def job_from_record(record: JobRecord) -> Job:
 
 
 def run_event_from_record(record: RunEventRecord) -> RunEvent:
-    return RunEvent(id=record.id, run_id=record.run_id, event_type=record.event_type, payload=dict(record.payload), created_at=record.created_at)
+    return RunEvent(
+        id=record.id,
+        run_id=record.run_id,
+        event_type=record.event_type,
+        payload=dict(record.payload),
+        created_at=record.created_at,
+    )
