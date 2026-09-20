@@ -312,3 +312,15 @@ class BaselineJobHandler:
                 error=error,
             )
         )
+
+
+    async def handle_terminal_failure(self, job: Job, error: Exception) -> None:
+        run_id_raw = job.payload.get("run_id")
+        if run_id_raw is None:
+            return
+        agent_id_raw = job.payload.get("agent_id")
+        self.orchestrator.fail_run(
+            UUID(str(run_id_raw)),
+            reason=f"{job.job_type.value} exhausted retries: {error}",
+            agent_id=UUID(str(agent_id_raw)) if agent_id_raw is not None else None,
+        )
