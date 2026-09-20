@@ -31,6 +31,9 @@ from packages.core.domain.models import (
     SelectionDecision,
     SelectionKind,
     Submission,
+    VerificationKind,
+    VerificationResult,
+    VerificationStatus,
 )
 from packages.persistence.models import (
     AgentRecord,
@@ -49,6 +52,7 @@ from packages.persistence.models import (
     RunRecord,
     SelectionDecisionRecord,
     SubmissionRecord,
+    VerificationResultRecord,
 )
 
 
@@ -67,6 +71,7 @@ def run_from_record(record: RunRecord) -> Run:
         fresh_agent_count=record.fresh_agent_count,
         redundancy_threshold=record.redundancy_threshold,
         critic_count=record.critic_count,
+        verification_enabled=record.verification_enabled,
     )
 
 
@@ -188,6 +193,19 @@ def knowledge_from_record(record: KnowledgeItemRecord) -> KnowledgeItem:
         status=KnowledgeStatus(record.status),
         confidence=record.confidence,
         provenance=dict(record.provenance),
+    )
+
+
+def verification_from_record(record: VerificationResultRecord) -> VerificationResult:
+    return VerificationResult(
+        id=record.id,
+        run_id=record.run_id,
+        generation_id=record.generation_id,
+        submission_id=record.submission_id,
+        kind=VerificationKind(record.kind),
+        status=VerificationStatus(record.status),
+        detail=record.detail,
+        metadata=dict(record.result_metadata),
     )
 
 

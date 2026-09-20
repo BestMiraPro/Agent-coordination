@@ -25,6 +25,7 @@ from packages.core.domain.models import (
     RunStatus,
     SelectionDecision,
     Submission,
+    VerificationResult,
 )
 
 
@@ -113,6 +114,12 @@ class KnowledgeRepository(Protocol):
     def list_for_generation(self, generation_id: UUID) -> list[KnowledgeItem]: ...
 
 
+class VerificationRepository(Protocol):
+    def add_many(self, results: Iterable[VerificationResult]) -> list[VerificationResult]: ...
+    def list_for_submission(self, submission_id: UUID) -> list[VerificationResult]: ...
+    def list_for_generation(self, generation_id: UUID) -> list[VerificationResult]: ...
+
+
 class ModelProfileRepository(Protocol):
     def add(self, profile: ModelProfile) -> ModelProfile: ...
     def get(self, profile_id: UUID) -> ModelProfile | None: ...
@@ -152,6 +159,7 @@ class UnitOfWork(Protocol):
     critic_findings: CriticFindingRepository
     cross_pollination: CrossPollinationRepository
     knowledge: KnowledgeRepository
+    verifications: VerificationRepository
     model_profiles: ModelProfileRepository
     model_calls: ModelCallRepository
     events: RunEventRepository

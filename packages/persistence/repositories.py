@@ -27,6 +27,7 @@ from packages.core.domain.models import (
     RunStatus,
     SelectionDecision,
     Submission,
+    VerificationResult,
 )
 from packages.core.orchestration.state_machine import assert_run_transition
 from packages.persistence.mappers import (
@@ -45,6 +46,7 @@ from packages.persistence.mappers import (
     run_from_record,
     selection_from_record,
     submission_from_record,
+    verification_from_record,
 )
 from packages.persistence.models import (
     AgentRecord,
@@ -62,6 +64,7 @@ from packages.persistence.models import (
     RunRecord,
     SelectionDecisionRecord,
     SubmissionRecord,
+    VerificationResultRecord,
 )
 
 
@@ -95,6 +98,7 @@ class RunSqlRepository:
             fresh_agent_count=run.fresh_agent_count,
             redundancy_threshold=run.redundancy_threshold,
             critic_count=run.critic_count,
+            verification_enabled=run.verification_enabled,
         )
         self.session.add(record)
         self.session.flush()
@@ -526,6 +530,48 @@ class KnowledgeSqlRepository:
         return [knowledge_from_record(record) for record in records]
 
 
+class VerificationSqlRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add_many(
+        self,
+        results: Iterable[VerificationResult],
+    ) -> list[VerificationResult]:
+        records = [
+            VerificationResultRecord(
+                id=result.id,
+                run_id=result.run_id,
+                generation_id=result.generation_id,
+                submission_id=result.submission_id,
+                kind=result.kind.value,
+                status=result.status.value,
+                detail=result.detail,
+                result_metadata=result.metadata,
+            )
+            for result in results
+        ]
+        self.session.add_all(records)
+        self.session.flush()
+        return [verification_from_record(record) for record in records]
+
+    def list_for_submission(self, submission_id: UUID) -> list[VerificationResult]:
+        records = self.session.execute(
+            select(VerificationResultRecord)
+            .where(VerificationResultRecord.submission_id == submission_id)
+            .order_by(VerificationResultRecord.created_at, VerificationResultRecord.id)
+        ).scalars()
+        return [verification_from_record(record) for record in records]
+
+    def list_for_generation(self, generation_id: UUID) -> list[VerificationResult]:
+        records = self.session.execute(
+            select(VerificationResultRecord)
+            .where(VerificationResultRecord.generation_id == generation_id)
+            .order_by(VerificationResultRecord.created_at, VerificationResultRecord.id)
+        ).scalars()
+        return [verification_from_record(record) for record in records]
+
+
 class ModelProfileSqlRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
@@ -638,6 +684,7 @@ class SqlAlchemyUnitOfWork:
         self.critic_findings = CriticFindingSqlRepository(self.session)
         self.cross_pollination = CrossPollinationSqlRepository(self.session)
         self.knowledge = KnowledgeSqlRepository(self.session)
+        self.verifications = VerificationSqlRepository(self.session)
         self.model_profiles = ModelProfileSqlRepository(self.session)
         self.model_calls = ModelCallSqlRepository(self.session)
         self.events = RunEventSqlRepository(self.session)
