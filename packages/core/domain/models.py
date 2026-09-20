@@ -166,9 +166,17 @@ class RunEventType(StrEnum):
 
 
 @dataclass(slots=True)
+class Project:
+    name: str
+    description: str = ""
+    id: UUID = field(default_factory=uuid4)
+
+
+@dataclass(slots=True)
 class Problem:
     title: str
     prompt: str
+    project_id: UUID | None = None
     id: UUID = field(default_factory=uuid4)
 
 

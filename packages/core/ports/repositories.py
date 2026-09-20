@@ -21,6 +21,7 @@ from packages.core.domain.models import (
     ModelProfile,
     ModelState,
     Problem,
+    Project,
     Run,
     RunEvent,
     RunStatus,
@@ -28,6 +29,12 @@ from packages.core.domain.models import (
     Submission,
     VerificationResult,
 )
+
+
+class ProjectRepository(Protocol):
+    def add(self, project: Project) -> Project: ...
+    def get(self, project_id: UUID) -> Project | None: ...
+    def list_all(self) -> list[Project]: ...
 
 
 class ProblemRepository(Protocol):
@@ -38,6 +45,7 @@ class ProblemRepository(Protocol):
 class RunRepository(Protocol):
     def add(self, run: Run) -> Run: ...
     def get(self, run_id: UUID) -> Run | None: ...
+    def list_all(self) -> list[Run]: ...
     def update_status(self, run_id: UUID, status: RunStatus) -> Run: ...
 
 
@@ -143,6 +151,7 @@ class ModelStateRepository(Protocol):
 class ModelCallRepository(Protocol):
     def add(self, call: ModelCall) -> ModelCall: ...
     def get(self, call_id: UUID) -> ModelCall | None: ...
+    def list_for_run(self, run_id: UUID) -> list[ModelCall]: ...
 
 
 class RunEventRepository(Protocol):
@@ -161,6 +170,7 @@ class JobQueue(Protocol):
 
 
 class UnitOfWork(Protocol):
+    projects: ProjectRepository
     problems: ProblemRepository
     runs: RunRepository
     generations: GenerationRepository

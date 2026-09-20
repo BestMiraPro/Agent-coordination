@@ -50,11 +50,21 @@ class TimestampMixin:
     )
 
 
+class ProjectRecord(TimestampMixin, Base):
+    __tablename__ = "projects"
+    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
+    name: Mapped[str] = mapped_column(String(300), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+
+
 class ProblemRecord(TimestampMixin, Base):
     __tablename__ = "problems"
     id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True, default=uuid4)
     title: Mapped[str] = mapped_column(String(300), nullable=False)
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    project_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
 
 class RunRecord(TimestampMixin, Base):

@@ -25,6 +25,7 @@ from packages.core.domain.models import (
     ModelState,
     MutationType,
     Problem,
+    Project,
     ResearchNiche,
     Run,
     RunEvent,
@@ -50,6 +51,7 @@ from packages.persistence.models import (
     ModelProfileRecord,
     ModelStateRecord,
     ProblemRecord,
+    ProjectRecord,
     RunEventRecord,
     RunRecord,
     SelectionDecisionRecord,
@@ -58,8 +60,21 @@ from packages.persistence.models import (
 )
 
 
+def project_from_record(record: ProjectRecord) -> Project:
+    return Project(
+        id=record.id,
+        name=record.name,
+        description=record.description,
+    )
+
+
 def problem_from_record(record: ProblemRecord) -> Problem:
-    return Problem(id=record.id, title=record.title, prompt=record.prompt)
+    return Problem(
+        id=record.id,
+        title=record.title,
+        prompt=record.prompt,
+        project_id=record.project_id,
+    )
 
 
 def run_from_record(record: RunRecord) -> Run:

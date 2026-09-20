@@ -23,6 +23,7 @@ from packages.core.domain.models import (
     ModelProfile,
     ModelState,
     Problem,
+    Project,
     Run,
     RunEvent,
     RunStatus,
@@ -44,6 +45,7 @@ from packages.persistence.mappers import (
     model_profile_from_record,
     model_state_from_record,
     problem_from_record,
+    project_from_record,
     run_event_from_record,
     run_from_record,
     selection_from_record,
@@ -63,6 +65,7 @@ from packages.persistence.models import (
     ModelProfileRecord,
     ModelStateRecord,
     ProblemRecord,
+    ProjectRecord,
     RunEventRecord,
     RunRecord,
     SelectionDecisionRecord,
@@ -71,12 +74,42 @@ from packages.persistence.models import (
 )
 
 
+class ProjectSqlRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def add(self, project: Project) -> Project:
+        record = ProjectRecord(
+            id=project.id,
+            name=project.name,
+            description=project.description,
+        )
+        self.session.add(record)
+        self.session.flush()
+        return project_from_record(record)
+
+    def get(self, project_id: UUID) -> Project | None:
+        record = self.session.get(ProjectRecord, project_id)
+        return project_from_record(record) if record else None
+
+    def list_all(self) -> list[Project]:
+        records = self.session.execute(
+            select(ProjectRecord).order_by(ProjectRecord.created_at, ProjectRecord.id)
+        ).scalars()
+        return [project_from_record(record) for record in records]
+
+
 class ProblemSqlRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
     def add(self, problem: Problem) -> Problem:
-        record = ProblemRecord(id=problem.id, title=problem.title, prompt=problem.prompt)
+        record = ProblemRecord(
+            id=problem.id,
+            title=problem.title,
+            prompt=problem.prompt,
+            project_id=problem.project_id,
+        )
         self.session.add(record)
         self.session.flush()
         return problem_from_record(record)
@@ -110,6 +143,12 @@ class RunSqlRepository:
     def get(self, run_id: UUID) -> Run | None:
         record = self.session.get(RunRecord, run_id)
         return run_from_record(record) if record else None
+
+    def list_all(self) -> list[Run]:
+        records = self.session.execute(
+            select(RunRecord).order_by(RunRecord.created_at.desc(), RunRecord.id)
+        ).scalars()
+        return [run_from_record(record) for record in records]
 
     def update_status(self, run_id: UUID, status: RunStatus) -> Run:
         record = self.session.get(RunRecord, run_id)
@@ -701,6 +740,14 @@ class ModelCallSqlRepository:
         record = self.session.get(ModelCallRecord, call_id)
         return model_call_from_record(record) if record else None
 
+    def list_for_run(self, run_id: UUID) -> list[ModelCall]:
+        records = self.session.execute(
+            select(ModelCallRecord)
+            .where(ModelCallRecord.run_id == run_id)
+            .order_by(ModelCallRecord.created_at, ModelCallRecord.id)
+        ).scalars()
+        return [model_call_from_record(record) for record in records]
+
 
 class RunEventSqlRepository:
     def __init__(self, session: Session) -> None:
@@ -742,6 +789,7 @@ class SqlAlchemyUnitOfWork:
 
     def __enter__(self) -> Self:
         self.session = self.session_factory()
+        self.projects = ProjectSqlRepository(self.session)
         self.problems = ProblemSqlRepository(self.session)
         self.runs = RunSqlRepository(self.session)
         self.generations = GenerationSqlRepository(self.session)
