@@ -3,9 +3,9 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from packages.core.domain.models import AgentStatus, RunStatus
+from packages.core.domain.models import AgentStatus, MutationType, RunStatus
 
 
 class ProblemCreate(BaseModel):
@@ -25,12 +25,24 @@ class RunCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     problem_id: UUID
+    max_generations: int = Field(default=3, ge=1, le=20)
+    population_size: int = Field(default=4, ge=2, le=12)
+    survivor_count: int = Field(default=2, ge=1, le=11)
+
+    @model_validator(mode="after")
+    def validate_tournament_shape(self) -> "RunCreate":
+        if self.survivor_count >= self.population_size:
+            raise ValueError("survivor_count must be smaller than population_size")
+        return self
 
 
 class RunCreatedResponse(BaseModel):
     id: UUID
     problem_id: UUID
     status: RunStatus
+    max_generations: int
+    population_size: int
+    survivor_count: int
 
 
 class ClaimResponse(BaseModel):
@@ -67,6 +79,22 @@ class EvaluationResponse(BaseModel):
     critique: str
 
 
+class SelectionResponse(BaseModel):
+    id: UUID
+    submission_id: UUID
+    selected: bool
+    rank: int
+    score_vector: dict[str, float | bool]
+    reason: str
+
+
+class LineageResponse(BaseModel):
+    id: UUID
+    child_agent_id: UUID
+    parent_submission_id: UUID
+    mutation_type: MutationType
+
+
 class AgentResponse(BaseModel):
     id: UUID
     role: str
@@ -79,11 +107,16 @@ class GenerationResponse(BaseModel):
     agents: list[AgentResponse]
     submissions: list[SubmissionResponse]
     evaluations: list[EvaluationResponse]
+    selections: list[SelectionResponse]
+    lineages: list[LineageResponse]
 
 
 class RunDetailResponse(BaseModel):
     id: UUID
     status: RunStatus
+    max_generations: int
+    population_size: int
+    survivor_count: int
     problem: ProblemResponse
     generations: list[GenerationResponse]
 

@@ -31,6 +31,8 @@ from services.api.app.schemas import (
     RunCreate,
     RunCreatedResponse,
     RunDetailResponse,
+    SelectionResponse,
+    LineageResponse,
     SubmissionResponse,
 )
 
@@ -94,7 +96,12 @@ def create_app(
         status_code=status.HTTP_201_CREATED,
     )
     async def create_run(body: RunCreate) -> RunCreatedResponse:
-        run = Run(problem_id=body.problem_id)
+        run = Run(
+            problem_id=body.problem_id,
+            max_generations=body.max_generations,
+            population_size=body.population_size,
+            survivor_count=body.survivor_count,
+        )
 
         with uow() as work:
             problem = work.problems.get(body.problem_id)
@@ -109,7 +116,12 @@ def create_app(
                 RunEvent(
                     run_id=run.id,
                     event_type=RunEventType.RUN_CREATED.value,
-                    payload={"problem_id": str(body.problem_id)},
+                    payload={
+                        "problem_id": str(body.problem_id),
+                        "max_generations": run.max_generations,
+                        "population_size": run.population_size,
+                        "survivor_count": run.survivor_count,
+                    },
                 )
             )
             work.commit()
@@ -124,6 +136,9 @@ def create_app(
             id=run.id,
             problem_id=run.problem_id,
             status=run.status,
+            max_generations=run.max_generations,
+            population_size=run.population_size,
+            survivor_count=run.survivor_count,
         )
 
     @app.get("/runs/{run_id}", response_model=RunDetailResponse)
@@ -148,6 +163,8 @@ def create_app(
                 agents = work.agents.list_for_generation(generation.id)
                 submissions = work.submissions.list_for_generation(generation.id)
                 evaluations = work.evaluations.list_for_generation(generation.id)
+                selections = work.selections.list_for_generation(generation.id)
+                lineages = work.lineages.list_for_generation(generation.id)
 
                 generations.append(
                     GenerationResponse(
@@ -200,12 +217,35 @@ def create_app(
                             )
                             for evaluation in evaluations
                         ],
+                        selections=[
+                            SelectionResponse(
+                                id=decision.id,
+                                submission_id=decision.submission_id,
+                                selected=decision.selected,
+                                rank=decision.rank,
+                                score_vector=decision.score_vector,
+                                reason=decision.reason,
+                            )
+                            for decision in selections
+                        ],
+                        lineages=[
+                            LineageResponse(
+                                id=lineage.id,
+                                child_agent_id=lineage.child_agent_id,
+                                parent_submission_id=lineage.parent_submission_id,
+                                mutation_type=lineage.mutation_type,
+                            )
+                            for lineage in lineages
+                        ],
                     )
                 )
 
         return RunDetailResponse(
             id=run.id,
             status=run.status,
+            max_generations=run.max_generations,
+            population_size=run.population_size,
+            survivor_count=run.survivor_count,
             problem=ProblemResponse(
                 id=problem.id,
                 title=problem.title,

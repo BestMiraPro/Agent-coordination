@@ -129,7 +129,7 @@ class BaselineOrchestrator:
             )
         return generation
 
-    def maybe_schedule_judging(self, run_id: UUID) -> bool:
+    def maybe_schedule_judging(self, run_id: UUID, generation_id: UUID | None = None) -> bool:
         with self.uow_factory() as uow:
             run = uow.runs.get(run_id)
             if run is None:
@@ -163,7 +163,7 @@ class BaselineOrchestrator:
         )
         return True
 
-    def start_judging(self, run_id: UUID) -> list[Agent]:
+    def start_judging(self, run_id: UUID, generation_id: UUID | None = None) -> list[Agent]:
         with self.uow_factory() as uow:
             run = uow.runs.get(run_id)
             if run is None:
@@ -236,7 +236,7 @@ class BaselineOrchestrator:
             )
         return judges
 
-    def maybe_schedule_finalize(self, run_id: UUID) -> bool:
+    def maybe_schedule_finalize(self, run_id: UUID, generation_id: UUID | None = None) -> bool:
         with self.uow_factory() as uow:
             run = uow.runs.get(run_id)
             if run is None:
@@ -281,7 +281,7 @@ class BaselineOrchestrator:
         )
         return True
 
-    def finalize_run(self, run_id: UUID) -> None:
+    def finalize_run(self, run_id: UUID, generation_id: UUID | None = None) -> None:
         with self.uow_factory() as uow:
             run = uow.runs.get(run_id)
             if run is None:

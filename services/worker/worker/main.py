@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 
 from packages.core.domain.models import ModelProfile
-from packages.core.orchestration.baseline import BaselineOrchestrator
+from packages.core.orchestration.tournament import TournamentOrchestrator
 from packages.persistence.database import build_engine, build_session_factory
 from packages.persistence.jobs import DurableJobQueue
 from packages.persistence.repositories import SqlAlchemyUnitOfWork
@@ -74,7 +74,7 @@ def build_handler(
         uow.commit()
 
     queue = DurableJobQueue(session_factory, worker_id=settings.worker_id)
-    orchestrator = BaselineOrchestrator(uow_factory, queue)
+    orchestrator = TournamentOrchestrator(uow_factory, queue)
     handler = BaselineJobHandler(
         uow_factory=uow_factory,
         orchestrator=orchestrator,

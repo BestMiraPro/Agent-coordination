@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from decimal import Decimal
+from typing import Protocol
 from uuid import UUID
 
 from packages.core.domain.models import (
     AgentStatus,
     ClaimDraft,
     Evaluation,
+    Generation,
     Job,
     JobType,
     ModelCall,
@@ -16,18 +18,48 @@ from packages.core.domain.models import (
     RunEventType,
     Submission,
 )
-from packages.core.orchestration.baseline import BaselineOrchestrator, blind_submissions
+from packages.core.orchestration.baseline import blind_submissions
 from packages.core.ports.repositories import UnitOfWork
 from packages.core.structured_outputs import parse_judge_output, parse_researcher_output
 from packages.prompts.baseline import build_judge_request, build_research_request
 from packages.providers.base import ModelProvider, ModelRequest, ModelResponse
 
 
+class RunOrchestrator(Protocol):
+    def start_run(self, run_id: UUID) -> Generation: ...
+    def maybe_schedule_judging(
+        self,
+        run_id: UUID,
+        generation_id: UUID | None = None,
+    ) -> bool: ...
+    def start_judging(
+        self,
+        run_id: UUID,
+        generation_id: UUID | None = None,
+    ) -> list: ...
+    def maybe_schedule_finalize(
+        self,
+        run_id: UUID,
+        generation_id: UUID | None = None,
+    ) -> bool: ...
+    def finalize_run(
+        self,
+        run_id: UUID,
+        generation_id: UUID | None = None,
+    ) -> None: ...
+    def fail_run(
+        self,
+        run_id: UUID,
+        reason: str,
+        agent_id: UUID | None = None,
+    ) -> None: ...
+
+
 class BaselineJobHandler:
     def __init__(
         self,
         uow_factory: Callable[[], UnitOfWork],
-        orchestrator: BaselineOrchestrator,
+        orchestrator: RunOrchestrator,
         provider: ModelProvider,
         model_profile_id: UUID,
         model_profile_name: str,
@@ -46,13 +78,23 @@ class BaselineJobHandler:
             await self._run_research_agent(job)
             return
         if job.job_type == JobType.START_JUDGING:
-            self.orchestrator.start_judging(UUID(str(job.payload["run_id"])))
+            self.orchestrator.start_judging(
+                UUID(str(job.payload["run_id"])),
+                UUID(str(job.payload["generation_id"]))
+                if job.payload.get("generation_id")
+                else None,
+            )
             return
         if job.job_type == JobType.RUN_JUDGE:
             await self._run_judge(job)
             return
         if job.job_type == JobType.FINALIZE_RUN:
-            self.orchestrator.finalize_run(UUID(str(job.payload["run_id"])))
+            self.orchestrator.finalize_run(
+                UUID(str(job.payload["run_id"])),
+                UUID(str(job.payload["generation_id"]))
+                if job.payload.get("generation_id")
+                else None,
+            )
             return
         raise ValueError(f"Unsupported job type: {job.job_type}")
 
@@ -64,17 +106,18 @@ class BaselineJobHandler:
             agent = uow.agents.get(agent_id)
             if agent is None:
                 raise KeyError(f"Agent not found: {agent_id}")
+            generation = uow.generations.get(agent.generation_id)
+            if generation is None:
+                raise RuntimeError("Agent generation is missing")
+
             existing = uow.submissions.get_for_agent(agent_id)
             if existing is not None:
                 if agent.status != AgentStatus.COMPLETED:
                     uow.agents.update_status(agent_id, AgentStatus.COMPLETED)
                     uow.commit()
-                self.orchestrator.maybe_schedule_judging(run_id)
+                self.orchestrator.maybe_schedule_judging(run_id, generation.id)
                 return
 
-            generation = uow.generations.get(agent.generation_id)
-            if generation is None:
-                raise RuntimeError("Agent generation is missing")
             run = uow.runs.get(generation.run_id)
             if run is None:
                 raise RuntimeError("Agent run is missing")
@@ -83,6 +126,15 @@ class BaselineJobHandler:
             problem = uow.problems.get(run.problem_id)
             if problem is None:
                 raise RuntimeError("Run problem is missing")
+
+            lineage = uow.lineages.get_for_child(agent_id)
+            parent_submission = (
+                uow.submissions.get(lineage.parent_submission_id)
+                if lineage is not None
+                else None
+            )
+            if lineage is not None and parent_submission is None:
+                raise RuntimeError("Lineage parent submission is missing")
 
             uow.agents.update_status(agent_id, AgentStatus.RUNNING)
             uow.events.append(
@@ -93,12 +145,18 @@ class BaselineJobHandler:
                         "agent_id": str(agent_id),
                         "role": agent.role,
                         "attempt": job.attempt,
+                        "generation_id": str(generation.id),
                     },
                 )
             )
             uow.commit()
 
-        request = build_research_request(problem, self.model_profile_name)
+        request = build_research_request(
+            problem,
+            self.model_profile_name,
+            parent_submission=parent_submission,
+            mutation_type=lineage.mutation_type if lineage is not None else None,
+        )
         response: ModelResponse | None = None
         try:
             response = await self.provider.generate(request)
@@ -136,12 +194,16 @@ class BaselineJobHandler:
                 RunEvent(
                     run_id=run_id,
                     event_type=RunEventType.AGENT_COMPLETED.value,
-                    payload={"agent_id": str(agent_id), "role": agent.role},
+                    payload={
+                        "agent_id": str(agent_id),
+                        "role": agent.role,
+                        "generation_id": str(generation.id),
+                    },
                 )
             )
             uow.commit()
 
-        self.orchestrator.maybe_schedule_judging(run_id)
+        self.orchestrator.maybe_schedule_judging(run_id, generation.id)
 
     async def _run_judge(self, job: Job) -> None:
         agent_id = UUID(str(job.payload["agent_id"]))
@@ -172,7 +234,7 @@ class BaselineJobHandler:
                 if judge.status != AgentStatus.COMPLETED:
                     uow.agents.update_status(agent_id, AgentStatus.COMPLETED)
                     uow.commit()
-                self.orchestrator.maybe_schedule_finalize(run_id)
+                self.orchestrator.maybe_schedule_finalize(run_id, generation.id)
                 return
 
             uow.agents.update_status(agent_id, AgentStatus.RUNNING)
@@ -184,6 +246,7 @@ class BaselineJobHandler:
                         "agent_id": str(agent_id),
                         "role": judge.role,
                         "attempt": job.attempt,
+                        "generation_id": str(generation.id),
                     },
                 )
             )
@@ -236,6 +299,7 @@ class BaselineJobHandler:
                             "evaluation_id": str(evaluation.id),
                             "submission_id": str(submission_id),
                             "judge_agent_id": str(agent_id),
+                            "generation_id": str(generation.id),
                         },
                     )
                 )
@@ -246,12 +310,16 @@ class BaselineJobHandler:
                 RunEvent(
                     run_id=run_id,
                     event_type=RunEventType.AGENT_COMPLETED.value,
-                    payload={"agent_id": str(agent_id), "role": judge.role},
+                    payload={
+                        "agent_id": str(agent_id),
+                        "role": judge.role,
+                        "generation_id": str(generation.id),
+                    },
                 )
             )
             uow.commit()
 
-        self.orchestrator.maybe_schedule_finalize(run_id)
+        self.orchestrator.maybe_schedule_finalize(run_id, generation.id)
 
     def _record_failed_call(
         self,
@@ -312,7 +380,6 @@ class BaselineJobHandler:
                 error=error,
             )
         )
-
 
     async def handle_terminal_failure(self, job: Job, error: Exception) -> None:
         run_id_raw = job.payload.get("run_id")

@@ -2,40 +2,104 @@ from __future__ import annotations
 
 import json
 
-from packages.core.domain.models import Problem
+from packages.core.domain.models import MutationType, Problem, Submission
 from packages.core.orchestration.baseline import BlindedSubmission
 from packages.core.structured_outputs import JudgeOutput, ResearcherOutput
 from packages.providers.base import ModelRequest
 
 
-def build_research_request(problem: Problem, model_profile: str) -> ModelRequest:
+_MUTATION_INSTRUCTIONS: dict[MutationType, str] = {
+    MutationType.STRENGTHEN: (
+        "Strengthen the parent idea. Repair weak steps, add missing support, and make "
+        "the argument more rigorous without merely paraphrasing it."
+    ),
+    MutationType.FALSIFY: (
+        "Actively try to falsify the parent idea. Search for counterexamples, hidden "
+        "assumptions, or contradictions. If it survives, produce a repaired version."
+    ),
+    MutationType.REDERIVE: (
+        "Re-derive the problem independently while using the parent only as a hypothesis "
+        "to compare against. Prefer a distinct derivation or formulation."
+    ),
+    MutationType.GENERALIZE: (
+        "Generalize the parent idea where justified, then check whether the generalization "
+        "reveals a simpler proof, stronger result, or failure boundary."
+    ),
+}
+
+
+def _submission_payload(submission: Submission) -> dict[str, object]:
+    return {
+        "summary": submission.summary,
+        "approach": submission.approach,
+        "claims": [
+            {
+                "statement": claim.statement,
+                "confidence": claim.confidence,
+                "support": claim.support,
+            }
+            for claim in submission.claims
+        ],
+        "evidence": submission.evidence,
+        "discoveries": submission.discoveries,
+        "failed_attempts": submission.failed_attempts,
+        "open_questions": submission.open_questions,
+        "final_answer": submission.final_answer,
+    }
+
+
+def build_research_request(
+    problem: Problem,
+    model_profile: str,
+    *,
+    parent_submission: Submission | None = None,
+    mutation_type: MutationType | None = None,
+) -> ModelRequest:
     schema = ResearcherOutput.model_json_schema()
+    metadata: dict[str, object] = {"problem_id": str(problem.id)}
+    task: dict[str, object] = {
+        "title": problem.title,
+        "problem": problem.prompt,
+        "output_schema": schema,
+    }
+
+    if parent_submission is None:
+        system_instruction = (
+            "You are an independent research agent. Solve the problem from first "
+            "principles. Do not assume access to other agents. Return only valid JSON "
+            "matching the supplied schema, with no markdown fences or commentary."
+        )
+    else:
+        if mutation_type is None:
+            raise ValueError("mutation_type is required for a cloned research agent")
+        metadata.update(
+            {
+                "parent_submission_id": str(parent_submission.id),
+                "mutation_type": mutation_type.value,
+            }
+        )
+        task["parent_candidate"] = _submission_payload(parent_submission)
+        task["mutation_objective"] = _MUTATION_INSTRUCTIONS[mutation_type]
+        system_instruction = (
+            "You are a cloned research branch in an evolutionary tournament. You receive "
+            "one parent candidate and a precise mutation objective. Build a new candidate, "
+            "not a summary of the parent. Preserve useful discoveries but independently "
+            "check every important claim. Return only valid JSON matching the supplied "
+            "schema, with no markdown fences or commentary."
+        )
+
     return ModelRequest(
         model_profile=model_profile,
         task_type="research",
         temperature=0.7,
         max_tokens=6000,
         response_schema=schema,
-        metadata={"problem_id": str(problem.id)},
+        metadata=metadata,
         messages=[
-            {
-                "role": "system",
-                "content": (
-                    "You are an independent research agent. Solve the problem from first "
-                    "principles. Do not assume access to other agents. Return only valid JSON "
-                    "matching the supplied schema, with no markdown fences or commentary."
-                ),
-            },
+            {"role": "system", "content": system_instruction},
             {
                 "role": "user",
-                "content": json.dumps(
-                    {
-                        "title": problem.title,
-                        "problem": problem.prompt,
-                        "output_schema": schema,
-                    },
-                    ensure_ascii=False,
-                ),
+                "content": json.dumps(task, ensure_ascii=False),
             },
         ],
     )
@@ -50,21 +114,7 @@ def build_judge_request(
     candidates = [
         {
             "candidate_id": item.candidate_id,
-            "summary": item.submission.summary,
-            "approach": item.submission.approach,
-            "claims": [
-                {
-                    "statement": claim.statement,
-                    "confidence": claim.confidence,
-                    "support": claim.support,
-                }
-                for claim in item.submission.claims
-            ],
-            "evidence": item.submission.evidence,
-            "discoveries": item.submission.discoveries,
-            "failed_attempts": item.submission.failed_attempts,
-            "open_questions": item.submission.open_questions,
-            "final_answer": item.submission.final_answer,
+            **_submission_payload(item.submission),
         }
         for item in blinded
     ]
