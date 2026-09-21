@@ -1,7 +1,13 @@
-.PHONY: up down logs db-up db-down migrate api worker web test test-integration lint
+.PHONY: up real-up wandb-smoke down logs db-up db-down migrate api worker web test test-integration lint
 
 up:
 	docker compose up --build
+
+real-up:
+	INFERENCE_PROVIDER=wandb docker compose up --build
+
+wandb-smoke:
+	INFERENCE_PROVIDER=wandb docker compose run --rm -e INFERENCE_PROVIDER=wandb worker python -m services.worker.worker.smoke
 
 down:
 	docker compose down

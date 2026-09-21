@@ -40,6 +40,8 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://agent:agent@postgres:5432/agent_coordination
       WEB_ORIGIN: http://localhost:3000
+      INFERENCE_PROVIDER: ${INFERENCE_PROVIDER:-fake}
+      INFERENCE_MODEL: ${INFERENCE_MODEL:-openai/gpt-oss-20b}
     ports:
       - "8000:8000"
     depends_on:
@@ -57,8 +59,11 @@ services:
       INFERENCE_MODEL: ${INFERENCE_MODEL:-openai/gpt-oss-20b}
       INFERENCE_BASE_URL: ${INFERENCE_BASE_URL:-https://api.inference.wandb.ai/v1}
       INFERENCE_API_KEY: ${INFERENCE_API_KEY:-}
+      WANDB_API_KEY: ${WANDB_API_KEY:-}
       INFERENCE_PROJECT: ${INFERENCE_PROJECT:-}
       INFERENCE_STRUCTURED_OUTPUTS: ${INFERENCE_STRUCTURED_OUTPUTS:-true}
+      INFERENCE_DISCOVER_MODELS: ${INFERENCE_DISCOVER_MODELS:-true}
+      INFERENCE_MODEL_LIMIT: ${INFERENCE_MODEL_LIMIT:-100}
       WORKER_POLL_INTERVAL_SECONDS: ${WORKER_POLL_INTERVAL_SECONDS:-0.5}
     depends_on:
       migrate:

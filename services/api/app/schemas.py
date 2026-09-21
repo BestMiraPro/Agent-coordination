@@ -311,3 +311,26 @@ class EngineeringCheckResponse(BaseModel):
 class EngineeringRunDetailResponse(EngineeringRunSummaryResponse):
     artifacts: list[EngineeringArtifactResponse]
     checks: list[EngineeringCheckResponse]
+
+
+class RuntimeStatusResponse(BaseModel):
+    configured_provider: str
+    configured_model: str
+    real_models: bool
+    registered_models: int
+    last_call_provider: str | None = None
+    last_call_model: str | None = None
+    last_call_latency_ms: int | None = None
+    last_call_task: str | None = None
+
+
+class ModelCallTraceResponse(BaseModel):
+    id: UUID
+    provider: str
+    model: str
+    task_type: str
+    status: str
+    latency_ms: int | None
+    input_tokens: int | None
+    output_tokens: int | None
+    retry_count: int

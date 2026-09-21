@@ -42,6 +42,7 @@ from services.api.app.schemas import (
     KnowledgeResponse,
     LineageResponse,
     ManualKnowledgeCreate,
+    ModelCallTraceResponse,
     ModelStateResponse,
     ProblemCreate,
     ProblemResponse,
@@ -52,6 +53,7 @@ from services.api.app.schemas import (
     RunDetailResponse,
     RunMetricsResponse,
     RunSummaryResponse,
+    RuntimeStatusResponse,
     SelectionResponse,
     SubmissionResponse,
     VerificationResponse,
@@ -334,6 +336,77 @@ def create_app(
             )
             for run in runs
         ]
+
+    @app.get("/runtime-status", response_model=RuntimeStatusResponse)
+    async def runtime_status() -> RuntimeStatusResponse:
+        configured_provider = os.getenv("INFERENCE_PROVIDER", "fake")
+        configured_model = os.getenv("INFERENCE_MODEL", "openai/gpt-oss-20b")
+        with uow() as work:
+            profiles = work.model_profiles.list_all()
+            recent = work.model_calls.list_recent(limit=1)
+            last = recent[0] if recent else None
+            last_profile = (
+                work.model_profiles.get(last.model_profile_id)
+                if last is not None
+                else None
+            )
+        response_metadata = last.response_metadata if last is not None else {}
+        return RuntimeStatusResponse(
+            configured_provider=configured_provider,
+            configured_model=configured_model,
+            real_models=configured_provider != "fake",
+            registered_models=len(profiles),
+            last_call_provider=(
+                str(response_metadata.get("provider"))
+                if response_metadata.get("provider")
+                else (last_profile.provider if last_profile else None)
+            ),
+            last_call_model=(
+                str(response_metadata.get("model"))
+                if response_metadata.get("model")
+                else (last_profile.model if last_profile else None)
+            ),
+            last_call_latency_ms=last.latency_ms if last else None,
+            last_call_task=last.task_type if last else None,
+        )
+
+    @app.get(
+        "/runs/{run_id}/model-calls",
+        response_model=list[ModelCallTraceResponse],
+    )
+    async def get_run_model_calls(run_id: UUID) -> list[ModelCallTraceResponse]:
+        with uow() as work:
+            if work.runs.get(run_id) is None:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Run not found",
+                )
+            calls = work.model_calls.list_for_run(run_id)
+            traces: list[ModelCallTraceResponse] = []
+            for call in calls:
+                profile = work.model_profiles.get(call.model_profile_id)
+                metadata = call.response_metadata
+                traces.append(
+                    ModelCallTraceResponse(
+                        id=call.id,
+                        provider=str(
+                            metadata.get("provider")
+                            or (profile.provider if profile else "unknown")
+                        ),
+                        model=str(
+                            metadata.get("model")
+                            or metadata.get("response_model")
+                            or (profile.model if profile else "unknown")
+                        ),
+                        task_type=call.task_type,
+                        status=call.status.value,
+                        latency_ms=call.latency_ms,
+                        input_tokens=call.input_tokens,
+                        output_tokens=call.output_tokens,
+                        retry_count=call.retry_count,
+                    )
+                )
+        return traces
 
     @app.get("/model-states", response_model=list[ModelStateResponse])
     async def get_model_states() -> list[ModelStateResponse]:

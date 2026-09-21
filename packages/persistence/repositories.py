@@ -814,6 +814,15 @@ class ModelProfileSqlRepository:
         ).scalar_one_or_none()
         return model_profile_from_record(record) if record else None
 
+    def list_all(self) -> list[ModelProfile]:
+        records = self.session.execute(
+            select(ModelProfileRecord).order_by(
+                ModelProfileRecord.created_at,
+                ModelProfileRecord.id,
+            )
+        ).scalars()
+        return [model_profile_from_record(record) for record in records]
+
 
 class ModelStateSqlRepository:
     def __init__(self, session: Session) -> None:
@@ -917,6 +926,14 @@ class ModelCallSqlRepository:
             select(ModelCallRecord)
             .where(ModelCallRecord.run_id == run_id)
             .order_by(ModelCallRecord.created_at, ModelCallRecord.id)
+        ).scalars()
+        return [model_call_from_record(record) for record in records]
+
+    def list_recent(self, limit: int = 20) -> list[ModelCall]:
+        records = self.session.execute(
+            select(ModelCallRecord)
+            .order_by(ModelCallRecord.created_at.desc(), ModelCallRecord.id.desc())
+            .limit(limit)
         ).scalars()
         return [model_call_from_record(record) for record in records]
 
