@@ -1,7 +1,9 @@
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PIP_DEFAULT_TIMEOUT=300 \
+    PIP_RETRIES=10
 
 WORKDIR /app
 
@@ -9,6 +11,7 @@ COPY pyproject.toml alembic.ini ./
 COPY packages ./packages
 COPY services ./services
 
-RUN python -m pip install --no-cache-dir .
+RUN --mount=type=cache,target=/root/.cache/pip \
+    python -m pip install --retries 10 --timeout 300 .
 
 CMD ["python", "-m", "services.worker.worker.main"]
