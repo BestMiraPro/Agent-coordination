@@ -1,6 +1,7 @@
 # Web Control Room
 
-Minimal Next.js interface for Phase 1.
+Next.js control room for launching and inspecting research and engineering
+runs.
 
 From `apps/web`:
 
