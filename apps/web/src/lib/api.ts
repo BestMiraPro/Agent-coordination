@@ -217,6 +217,29 @@ export type RunMetrics = {
   judge_disagreement: number;
 };
 
+export type RuntimeStatus = {
+  configured_provider: string;
+  configured_model: string;
+  real_models: boolean;
+  registered_models: number;
+  last_call_provider: string | null;
+  last_call_model: string | null;
+  last_call_latency_ms: number | null;
+  last_call_task: string | null;
+};
+
+export type ModelCallTrace = {
+  id: string;
+  provider: string;
+  model: string;
+  task_type: string;
+  status: string;
+  latency_ms: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  retry_count: number;
+};
+
 export type ModelState = {
   id: string;
   model_profile_id: string;
@@ -353,6 +376,16 @@ export async function getRunMetrics(runId: string) {
 
 export async function getModelStates() {
   return request<ModelState[]>("/model-states", { cache: "no-store" });
+}
+
+export async function getRuntimeStatus() {
+  return request<RuntimeStatus>("/runtime-status", { cache: "no-store" });
+}
+
+export async function getRunModelCalls(runId: string) {
+  return request<ModelCallTrace[]>(`/runs/${runId}/model-calls`, {
+    cache: "no-store",
+  });
 }
 
 export async function injectKnowledge(

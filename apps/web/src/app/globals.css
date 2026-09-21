@@ -282,3 +282,82 @@ code { color:#b6bdc9; font-family:"SFMono-Regular",Consolas,monospace; font-size
 @media (max-width: 700px) {
   .engineeringConfig { grid-template-columns: 1fr; }
 }
+
+.realBadge {
+  color: var(--accent);
+  border-color: rgba(133,242,199,.3);
+  background: rgba(133,242,199,.07);
+}
+.fakeBadge {
+  color: var(--warning);
+  border-color: rgba(245,205,121,.3);
+  background: rgba(245,205,121,.07);
+}
+.presetRow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 9px;
+  margin-top: 14px;
+}
+.secondaryButton {
+  margin-top: 0;
+  border: 1px solid var(--line);
+  background: rgba(255,255,255,.04);
+  color: var(--text);
+  font-weight: 750;
+}
+.secondaryButton:hover {
+  border-color: rgba(133,242,199,.35);
+  background: rgba(133,242,199,.07);
+}
+.modeHint {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: .78rem;
+}
+.advancedSettings {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255,255,255,.02);
+}
+.advancedSettings summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: .8rem;
+  font-weight: 800;
+}
+.providerWarning {
+  margin-top: 14px;
+  padding: 11px 12px;
+  border: 1px solid rgba(245,205,121,.22);
+  border-radius: 11px;
+  color: var(--warning);
+  background: rgba(245,205,121,.06);
+  font-size: .78rem;
+  line-height: 1.5;
+}
+.modelProof {
+  margin-top: 14px;
+  padding: 13px;
+  border: 1px solid rgba(133,242,199,.18);
+  border-radius: 12px;
+  background: rgba(133,242,199,.045);
+}
+.modelProof strong {
+  display: block;
+  margin-top: 5px;
+  font-size: .86rem;
+  word-break: break-word;
+}
+.proofLabel {
+  color: var(--accent);
+  font-size: .68rem;
+  font-weight: 850;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+@media (max-width: 700px) {
+  .presetRow { grid-template-columns: 1fr; }
+}

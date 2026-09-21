@@ -8,19 +8,23 @@ import {
   Generation,
   KnowledgeKind,
   Lineage,
+  ModelCallTrace,
   ModelState,
   Project,
   RunDetail,
   RunEvent,
   RunMetrics,
+  RuntimeStatus,
   createEngineeringRun,
   createProblem,
   createProject,
   createRun,
   getEngineeringRun,
   getModelStates,
+  getRuntimeStatus,
   getRun,
   getRunMetrics,
+  getRunModelCalls,
   injectKnowledge,
   listEngineeringRuns,
   listProjects,
@@ -79,6 +83,8 @@ export default function Home() {
   const [run, setRun] = useState<RunDetail | null>(null);
   const [metrics, setMetrics] = useState<RunMetrics | null>(null);
   const [models, setModels] = useState<ModelState[]>([]);
+  const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatus | null>(null);
+  const [modelCalls, setModelCalls] = useState<ModelCallTrace[]>([]);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [manualKind, setManualKind] = useState<KnowledgeKind>("HYPOTHESIS");
   const [manualKnowledge, setManualKnowledge] = useState("");
@@ -95,14 +101,16 @@ export default function Home() {
 
   const refreshStatic = useCallback(async () => {
     try {
-      const [projectList, modelStates, engineeringRuns] = await Promise.all([
+      const [projectList, modelStates, engineeringRuns, runtime] = await Promise.all([
         listProjects(),
         getModelStates(),
         listEngineeringRuns(),
+        getRuntimeStatus(),
       ]);
       setProjects(projectList);
       setModels(modelStates);
       setEngineeringHistoryCount(engineeringRuns.length);
+      setRuntimeStatus(runtime);
     } catch {
       // The run surface still works if these dashboard calls are temporarily unavailable.
     }
@@ -110,14 +118,18 @@ export default function Home() {
 
   const refreshRun = useCallback(async (id: string) => {
     try {
-      const [detail, runMetrics, modelStates] = await Promise.all([
+      const [detail, runMetrics, modelStates, traces, runtime] = await Promise.all([
         getRun(id),
         getRunMetrics(id),
         getModelStates(),
+        getRunModelCalls(id),
+        getRuntimeStatus(),
       ]);
       setRun(detail);
       setMetrics(runMetrics);
       setModels(modelStates);
+      setModelCalls(traces);
+      setRuntimeStatus(runtime);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not refresh run.");
@@ -177,6 +189,24 @@ export default function Home() {
       source.close();
     };
   }, [refreshRun, runId]);
+
+  function applyPreset(preset: "smoke" | "research") {
+    if (preset === "smoke") {
+      setMaxGenerations(1);
+      setPopulationSize(2);
+      setSurvivorCount(1);
+      setFreshAgentCount(0);
+      setCriticCount(0);
+      setVerificationEnabled(true);
+      return;
+    }
+    setMaxGenerations(3);
+    setPopulationSize(6);
+    setSurvivorCount(3);
+    setFreshAgentCount(1);
+    setCriticCount(1);
+    setVerificationEnabled(true);
+  }
 
   async function start(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -261,6 +291,7 @@ export default function Home() {
   }
 
   const generation = run?.generations.at(-1) ?? null;
+  const lastModelCall = modelCalls.at(-1) ?? null;
   const allKnowledge = run?.generations.flatMap((item) => item.knowledge) ?? [];
   const allPackets = run?.generations.flatMap((item) => item.cross_pollination) ?? [];
   const allCandidates = run?.generations.flatMap((item) => item.candidate_states) ?? [];
@@ -292,11 +323,16 @@ export default function Home() {
             critique, verification, model routing, budgets, and the complete audit trail.
           </p>
         </div>
-        <div className="systemBadge"><span className="pulse" />Phases 0–10</div>
+        <div className={`systemBadge ${runtimeStatus?.real_models ? "realBadge" : "fakeBadge"}`}>
+          <span className="pulse" />
+          {runtimeStatus?.real_models
+            ? `REAL · ${runtimeStatus.configured_provider}`
+            : "FAKE MODE"}
+        </div>
       </header>
 
       <nav className="controlNav">
-        {["overview","population","research","knowledge","candidates","verification","models","engineering","events"].map((item) => (
+        {["overview","research","verification","engineering","events"].map((item) => (
           <a key={item} href={`#${item}`}>{item}</a>
         ))}
       </nav>
@@ -306,30 +342,60 @@ export default function Home() {
           <div className="panelHeading">
             <div><p className="kicker">Launch</p><h2>New research run</h2></div>
           </div>
-          <label>Project<input value={projectName} onChange={(e) => setProjectName(e.target.value)} /></label>
           <label>Problem title<input value={title} onChange={(e) => setTitle(e.target.value)} /></label>
           <label>
-            Research problem
-            <textarea value={prompt} onChange={(e) => setPrompt(e.target.value)} rows={7} />
+            What should the agents solve?
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={8}
+              placeholder="Describe the research question, what counts as a good answer, and any constraints."
+            />
           </label>
-          <div className="configGrid">
-            <NumberField label="Generations" value={maxGenerations} min={1} max={20} onChange={setMaxGenerations} />
-            <NumberField label="Population" value={populationSize} min={2} max={12} onChange={setPopulationSize} />
-            <NumberField label="Survivors" value={survivorCount} min={1} max={11} onChange={setSurvivorCount} />
-            <NumberField label="Fresh" value={freshAgentCount} min={0} max={11} onChange={setFreshAgentCount} />
-            <NumberField label="Critics" value={criticCount} min={0} max={4} onChange={setCriticCount} />
-            <label>
-              Redundancy
-              <input type="number" min={0} max={1} step={0.01} value={redundancyThreshold}
-                onChange={(e) => setRedundancyThreshold(Number(e.target.value))} />
-            </label>
+          <div className="presetRow">
+            <button type="button" className="secondaryButton" onClick={() => applyPreset("smoke")}>
+              Quick smoke · 2 agents
+            </button>
+            <button type="button" className="secondaryButton" onClick={() => applyPreset("research")}>
+              Full research · 3 generations
+            </button>
           </div>
-          <label className="checkRow">
-            <input type="checkbox" checked={verificationEnabled}
-              onChange={(e) => setVerificationEnabled(e.target.checked)} />
-            Verify final candidate
-          </label>
-          <button type="submit" disabled={starting}>{starting ? "Starting…" : "Start run"}</button>
+          <p className="modeHint">
+            Current run: {maxGenerations} generation{maxGenerations === 1 ? "" : "s"} · {populationSize} researchers · {criticCount} critic{criticCount === 1 ? "" : "s"}.
+          </p>
+          <details className="advancedSettings">
+            <summary>Advanced settings</summary>
+            <label>Project<input value={projectName} onChange={(e) => setProjectName(e.target.value)} /></label>
+            <div className="configGrid">
+              <NumberField label="Generations" value={maxGenerations} min={1} max={20} onChange={setMaxGenerations} />
+              <NumberField label="Population" value={populationSize} min={2} max={12} onChange={setPopulationSize} />
+              <NumberField label="Survivors" value={survivorCount} min={1} max={11} onChange={setSurvivorCount} />
+              <NumberField label="Fresh explorers" value={freshAgentCount} min={0} max={11} onChange={setFreshAgentCount} />
+              <NumberField label="Critics" value={criticCount} min={0} max={4} onChange={setCriticCount} />
+              <label>
+                Redundancy threshold
+                <input type="number" min={0} max={1} step={0.01} value={redundancyThreshold}
+                  onChange={(e) => setRedundancyThreshold(Number(e.target.value))} />
+              </label>
+            </div>
+            <label className="checkRow">
+              <input type="checkbox" checked={verificationEnabled}
+                onChange={(e) => setVerificationEnabled(e.target.checked)} />
+              Verify final candidate
+            </label>
+          </details>
+          {!runtimeStatus?.real_models ? (
+            <div className="providerWarning">
+              Fake models are active. Restart with <code>make real-up</code> before judging research quality.
+            </div>
+          ) : null}
+          <button type="submit" disabled={starting}>
+            {starting
+              ? "Starting…"
+              : runtimeStatus?.real_models
+                ? "Start REAL research run"
+                : "Start fake test run"}
+          </button>
           {error ? <p className="error">{error}</p> : null}
           <div className="chips">
             {projects.slice(-6).map((project) => <span key={project.id}>{project.name}</span>)}
@@ -352,11 +418,23 @@ export default function Home() {
                 <Metric label="Verified" value={metrics?.verified_candidates ?? 0} />
                 <Metric label="Niches" value={metrics?.active_niches ?? 0} />
               </div>
-              <div className="chips">
-                <span>{metrics?.input_tokens ?? 0} input tok</span>
-                <span>{metrics?.output_tokens ?? 0} output tok</span>
-                <span>€{(metrics?.estimated_cost ?? 0).toFixed(4)} est.</span>
-                <span>judge Δ {(metrics?.judge_disagreement ?? 0).toFixed(3)}</span>
+              <div className="modelProof">
+                <div>
+                  <span className="proofLabel">Inference proof</span>
+                  <strong>
+                    {lastModelCall
+                      ? `${lastModelCall.provider} · ${lastModelCall.model}`
+                      : runtimeStatus?.real_models
+                        ? `${runtimeStatus.configured_provider} configured — waiting for first call`
+                        : "deterministic fake provider"}
+                  </strong>
+                </div>
+                <div className="chips">
+                  <span>{metrics?.input_tokens ?? 0} input tok</span>
+                  <span>{metrics?.output_tokens ?? 0} output tok</span>
+                  <span>{lastModelCall?.latency_ms ?? 0}ms last call</span>
+                  <span>{modelCalls.length} traced calls</span>
+                </div>
               </div>
               <p className="runId">Run <code>{run.id}</code></p>
             </>
