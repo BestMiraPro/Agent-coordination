@@ -4,12 +4,11 @@ Revision ID: 0005_cross_pollination
 Revises: 0004_memory
 """
 
-from typing import Sequence
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 revision: str = "0005_cross_pollination"
 down_revision: str | None = "0004_memory"

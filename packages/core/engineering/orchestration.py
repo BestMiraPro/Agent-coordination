@@ -10,7 +10,6 @@ from packages.core.domain.models import (
 )
 from packages.core.ports.repositories import JobQueue, UnitOfWork
 
-
 IMPLEMENTER_ROLES = ("primary", "test_specialist")
 
 

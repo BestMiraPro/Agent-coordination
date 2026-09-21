@@ -15,7 +15,6 @@ from packages.persistence.models import Base, JobRecord
 from packages.persistence.repositories import SqlAlchemyUnitOfWork
 from services.api.app.main import create_app
 
-
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
 pytestmark = [

@@ -4,12 +4,11 @@ Revision ID: 0006_adversarial
 Revises: 0005_cross_pollination
 """
 
-from typing import Sequence
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 revision: str = "0006_adversarial"
 down_revision: str | None = "0005_cross_pollination"

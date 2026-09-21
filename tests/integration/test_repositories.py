@@ -10,7 +10,6 @@ from packages.core.domain.models import Agent, Generation, Problem, Run, RunStat
 from packages.persistence.models import Base
 from packages.persistence.repositories import SqlAlchemyUnitOfWork
 
-
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
 pytestmark = [

@@ -4,12 +4,11 @@ Revision ID: 0008_routing
 Revises: 0007_verification
 """
 
-from typing import Sequence
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 revision: str = "0008_routing"
 down_revision: str | None = "0007_verification"

@@ -64,7 +64,7 @@ class RunCreate(BaseModel):
     verification_enabled: bool = True
 
     @model_validator(mode="after")
-    def validate_tournament_shape(self) -> "RunCreate":
+    def validate_tournament_shape(self) -> RunCreate:
         if self.survivor_count >= self.population_size:
             raise ValueError("survivor_count must be smaller than population_size")
         if self.fresh_agent_count >= self.population_size:

@@ -14,7 +14,6 @@ from packages.core.domain.models import (
     Submission,
 )
 
-
 _TOKEN_RE = re.compile(r"[a-z0-9]+")
 _STOPWORDS = {
     "a", "an", "and", "are", "as", "at", "be", "by", "for", "from", "in",
@@ -87,8 +86,6 @@ class TournamentPolicy:
             aggregate.submission_id: index
             for index, aggregate in enumerate(ranked, start=1)
         }
-        aggregate_by_id = {item.submission_id: item for item in aggregates}
-
         diversity = self._diversity_signals(
             submissions=submissions,
             quality_rank=rank_by_id,

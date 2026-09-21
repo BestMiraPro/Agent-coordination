@@ -18,7 +18,6 @@ from packages.core.domain.models import (
 )
 from packages.core.ports.repositories import JobQueue, UnitOfWork
 
-
 RESEARCHER_COUNT = 4
 JUDGE_COUNT = 2
 

@@ -26,7 +26,6 @@ from packages.core.orchestration.tournament_policy import TournamentPolicy
 from packages.core.ports.repositories import JobQueue, UnitOfWork
 from packages.core.verification.engine import VerificationEngine
 
-
 JUDGE_COUNT = 2
 _MUTATION_CYCLE = (
     MutationType.STRENGTHEN,

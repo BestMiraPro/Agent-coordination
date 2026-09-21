@@ -12,7 +12,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 
 from packages.persistence.models import Base  # noqa: E402
 
-
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)

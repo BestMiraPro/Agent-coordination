@@ -10,7 +10,6 @@ from packages.core.domain.models import (
     Submission,
 )
 
-
 _WHITESPACE = re.compile(r"\s+")
 _KIND_PRIORITY = {
     KnowledgeKind.VERIFIED_FACT: 0,

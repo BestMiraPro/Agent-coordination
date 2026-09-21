@@ -4,12 +4,11 @@ Revision ID: 0010_engineering
 Revises: 0009_control_room
 """
 
-from typing import Sequence
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 revision: str = "0010_engineering"
 down_revision: str | None = "0009_control_room"

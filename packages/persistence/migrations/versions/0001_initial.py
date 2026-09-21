@@ -4,12 +4,11 @@ Revision ID: 0001_initial
 Revises:
 """
 
-from typing import Sequence
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 revision: str = "0001_initial"
 down_revision: str | None = None

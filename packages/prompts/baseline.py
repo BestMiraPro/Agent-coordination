@@ -13,7 +13,6 @@ from packages.core.orchestration.baseline import BlindedSubmission
 from packages.core.structured_outputs import CriticOutput, JudgeOutput, ResearcherOutput
 from packages.providers.base import ModelRequest
 
-
 _MUTATION_INSTRUCTIONS: dict[MutationType, str] = {
     MutationType.STRENGTHEN: (
         "Strengthen the parent idea. Repair weak steps, add missing support, and make "

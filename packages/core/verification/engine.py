@@ -11,7 +11,6 @@ from packages.core.domain.models import (
     VerificationStatus,
 )
 
-
 _PYTHON_BLOCK = re.compile(r"```python\s*(.*?)```", re.IGNORECASE | re.DOTALL)
 
 

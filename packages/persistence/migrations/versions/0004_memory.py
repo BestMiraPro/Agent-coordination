@@ -4,12 +4,11 @@ Revision ID: 0004_memory
 Revises: 0003_diversity
 """
 
-from typing import Sequence
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 revision: str = "0004_memory"
 down_revision: str | None = "0003_diversity"

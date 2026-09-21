@@ -6,7 +6,6 @@ from uuid import UUID
 
 from packages.core.domain.models import (
     EngineeringArtifact,
-    EngineeringCheck,
     EngineeringStage,
     EngineeringStatus,
     Job,
@@ -29,7 +28,6 @@ from packages.prompts.engineering import (
     build_engineering_review_request,
 )
 from packages.providers.base import ModelProvider, ModelRequest, ModelResponse
-
 
 ENGINEERING_JOB_TYPES = {
     JobType.ENGINEERING_PLAN,

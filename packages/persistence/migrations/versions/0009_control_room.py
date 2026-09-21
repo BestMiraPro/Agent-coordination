@@ -4,12 +4,11 @@ Revision ID: 0009_control_room
 Revises: 0008_routing
 """
 
-from typing import Sequence
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
+from alembic import op
 from sqlalchemy.dialects import postgresql
-
 
 revision: str = "0009_control_room"
 down_revision: str | None = "0008_routing"

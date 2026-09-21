@@ -7,8 +7,8 @@ from uuid import UUID
 
 from packages.core.domain.models import (
     AgentStatus,
-    CriticFinding,
     ClaimDraft,
+    CriticFinding,
     Evaluation,
     Generation,
     Job,
@@ -20,8 +20,8 @@ from packages.core.domain.models import (
     Submission,
 )
 from packages.core.orchestration.baseline import blind_submissions
-from packages.core.research.memory import build_memory_packet, extract_knowledge
 from packages.core.ports.repositories import UnitOfWork
+from packages.core.research.memory import build_memory_packet, extract_knowledge
 from packages.core.structured_outputs import (
     parse_critic_output,
     parse_judge_output,

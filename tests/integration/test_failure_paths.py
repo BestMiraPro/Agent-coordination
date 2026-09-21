@@ -27,7 +27,6 @@ from packages.providers.base import ModelRequest, ModelResponse
 from services.worker.worker.handlers.baseline import BaselineJobHandler
 from services.worker.worker.runtime import run_once
 
-
 TEST_DATABASE_URL = os.getenv("TEST_DATABASE_URL")
 
 pytestmark = [

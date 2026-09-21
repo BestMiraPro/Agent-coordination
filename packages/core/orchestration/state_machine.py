@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from packages.core.domain.models import RunStatus
 
-
 _ALLOWED_TRANSITIONS: dict[RunStatus, set[RunStatus]] = {
     RunStatus.CREATED: {RunStatus.RESEARCHING, RunStatus.PAUSED, RunStatus.FAILED},
     RunStatus.RESEARCHING: {RunStatus.JUDGING, RunStatus.PAUSED, RunStatus.FAILED},
